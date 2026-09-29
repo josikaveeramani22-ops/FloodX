@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloodX 2.0 — Citizen SafeZone (v2)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script>
+/* Guard + fallback loader: if the first Leaflet CDN fails, load another. */
+window.__L = window.L || null;
+(function () {
+  function loadScript(src, cb) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = function () { cb(true); };
+    s.onerror = function () { cb(false); };
+    document.head.appendChild(s);
+  }
+  window.__loadLeaflet = function (cb) {
+    if (window.L && L.map) { if (cb) cb(true); return; }
+    loadScript('https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js', function (ok) {
+      if (window.L && L.map) { if (cb) cb(true); return; }
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js', function (ok2) {
+        if (window.L && L.map) { if (cb) cb(true); }
+        else if (cb) cb(false);
+      });
+    });
+  };
+  setTimeout(function () {
+    if (!(window.L && L.map)) { try { window.__loadLeaflet(); } catch (e) {} }
+  }, 2500);
+})();
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="try{window.__loadLeaflet&&window.__loadLeaflet()}catch(e){}"></script>
+<style>
+:root{
+  --bg:#0B1320; --bg2:#111C2E; --card:#152238; --card2:#1B2A42;
+  --border:#24364F; --text:#E8EEF7; --muted:#8CA3BF; --accent:#4FD1C5;
+  --green:#48BB78; --yellow:#E0A63C; --orange:#ED8936; --red:#F56565;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Calibri,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+button{font-family:inherit;cursor:pointer}
+select,.txt{background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;outline:none}
+select:focus,.txt:focus{border-color:var(--accent)}
+
+.topbar{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 18px}
+.topbar .brand h1{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar .brand h1 span{color:var(--accent)}
+.badge{background:var(--accent);color:var(--bg);font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px}
+.status{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.status .dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block}
+.spacer{flex:1}
+.clock{font-variant-numeric:tabular-nums;font-size:13px;font-weight:600}
+.toplink{color:var(--accent);text-decoration:none;font-size:12px;font-weight:600}
+
+.layout{display:grid;grid-template-columns:360px 1fr;gap:0;height:calc(100vh - 52px)}
+.col{overflow-y:auto;padding:16px;background:var(--bg2);border-right:1px solid var(--border)}
+.col-map{padding:12px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+
+.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
+.panel h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.panel h2 .live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.6s infinite}
+@keyframes blink{50%{opacity:.25}}
+fieldset{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+legend{font-size:10px;color:var(--muted);padding:0 4px;text-transform:uppercase;letter-spacing:.05em}
+
+.risk-badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:12px;letter-spacing:.04em}
+.risk-LOW{background:rgba(72,187,120,.15);color:var(--green)}
+.risk-MODERATE{background:rgba(224,166,60,.15);color:var(--yellow)}
+.risk-CRITICAL{background:rgba(245,101,101,.18);color:var(--red)}
+.risk-UNKNOWN{background:rgba(140,163,191,.15);color:var(--muted)}
+
+.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--border);font-size:12px}
+.kv:last-child{border-bottom:none}
+.kv b{font-variant-numeric:tabular-nums}
+.ev{font-variant-numeric:tabular-nums;color:var(--accent)}
+
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric{background:var(--card2);border-radius:9px;padding:10px}
+.m-label{font-size:10px;color:var(--muted);margin-bottom:4px}
+.m-value{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+.m-unit{font-size:10px;color:var(--muted);font-weight:500;margin-left:3px}
+.bar{height:5px;background:var(--bg2);border-radius:3px;margin-top:7px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.chip{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:11px;display:flex;align-items:center;gap:7px}
+.chip .sdot{width:8px;height:8px;border-radius:50%;flex:none}
+.chip b{flex:1;font-size:11px}
+.chip small{color:var(--muted)}
+
+.banner{display:none;background:linear-gradient(90deg,rgba(245,101,101,.2),rgba(245,101,101,.05));border:1px solid var(--red);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px}
+.banner.on{display:block}
+.banner b{color:var(--red);font-size:13px}
+
+.conn{display:flex;gap:6px;margin-bottom:8px}
+.conn button{flex:1;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-size:12px}
+.conn button:hover{border-color:var(--accent)}
+.connstatus{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px}
+
+.route-box{background:var(--card2);border-radius:9px;padding:10px;margin-bottom:8px;border:1px solid var(--border)}
+.route-box.r1{border-left:3px solid var(--green)}
+.route-box.r2{border-left:3px solid var(--accent)}
+.route-box h3{font-size:12px;margin-bottom:5px}
+.route-box h3 small{color:var(--muted);font-weight:400}
+.route-steps{font-size:11px;color:var(--text);line-height:1.7}
+.route-steps b{color:var(--accent)}
+.route-meta{font-size:10px;color:var(--muted);margin-top:5px}
+.route-warn{font-size:10px;color:var(--orange)}
+.route-warn.red{color:var(--red)}
+
+#map{flex:1;border-radius:12px;border:1px solid var(--border);min-height:320px;z-index:1}
+.map-err{position:absolute;inset:0;z-index:500;display:none;align-items:center;justify-content:center;text-align:center;background:var(--bg);font-size:13px;color:var(--red);padding:20px;line-height:1.8;border-radius:12px}
+.map-err.on{display:flex}
+.hint{font-size:11px;color:var(--muted);line-height:1.5}
+.safe{color:var(--green)}
+.warn{color:var(--yellow)}
+.dang{color:var(--red)}
+.gotobox{position:absolute;z-index:600;right:22px;bottom:34px;background:var(--accent);color:var(--bg);border:none;border-radius:8px;padding:8px 12px;font-weight:700;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.file-banner{display:none;background:linear-gradient(90deg,rgba(224,166,60,.18),rgba(224,166,60,.06));border-bottom:1px solid var(--yellow);color:var(--text);font-size:12px;line-height:1.7;padding:10px 18px}
+.file-banner.on{display:block}
+.file-banner b{color:var(--yellow)}
+</style>
+</head>
+<body>
+
+<div class="file-banner" id="fileBanner"></div>
+
+<!-- ═══════════ TOP BAR ═══════════ -->
+<div class="topbar">
+  <div class="brand"><h1>🌊 FloodX <span>2.0</span> <div class="badge">CITIZEN</div></h1></div>
+  <div class="status"><span class="dot" id="apiDot"></span><span id="apiTxt">Connecting…</span></div>
+  <div class="spacer"></div>
+  <a class="toplink" href="/">⚙️ Admin dashboard →</a>
+  <span class="clock" id="clock"></span>
+</div>
+
+<div class="layout">
+  <!-- ═══════════ LEFT: my zone ═══════════ -->
+  <div class="col">
+    <div class="panel">
+      <h2>📍 My Zone</h2>
+      <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px">I live in zone</label>
+      <select id="selMy" style="width:100%"></select>
+      <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;color:var(--muted)">Flood risk (next 30 min)</span>
+        <span class="risk-badge" id="myRisk">LOW</span>
+      </div>
+      <div class="banner" id="warnBanner">
+        🚨 <b>FLOOD WARNING</b> — <span id="warnStreet">your street</span> is at high risk of flooding in the next 30 minutes. Move to higher ground and avoid <span id="warnAvoid">low-lying routes</span>.
+      </div>
+      <div class="metrics" style="margin-top:10px">
+        <div class="metric"><div class="m-label">🌧️ Rainfall</div><div class="m-value" id="mRain">0<span class="m-unit">mm/hr</span></div></div>
+        <div class="metric"><div class="m-label">💧 Water Level</div><div class="m-value" id="mDepth">0<span class="m-unit">cm</span></div></div>
+        <div class="metric"><div class="m-label">🌊 Flow</div><div class="m-value" id="mFlow">0<span class="m-unit">L/min</span></div></div>
+        <div class="metric"><div class="m-label">🏗️ Drain Saturation</div><div class="m-value" id="mSat">0<span class="m-unit">%</span></div></div>
+      </div>
+      <div class="bar"><i id="satBar" style="width:0%;background:var(--green)"></i></div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted)">Drain capacity <b id="mCap" style="color:var(--text)">0</b> L/min · blockage <b id="mBlock" style="color:var(--text)">0%</b></div>
+      <div class="kv" style="margin-top:8px"><span>CCTV check</span><b id="mCctv" style="color:var(--accent)">Clear</b></div>
+      <div class="kv"><span>Last update</span><b class="ev" id="mTs">—</b></div>
+    </div>
+
+    <div class="panel">
+      <h2>🛰️ Live feed</h2>
+      <div class="conn">
+        <button id="btnConn" onclick="connectFeed()">🔌 Connect</button>
+        <button id="btnTest" onclick="testFeed()">🧪 Test stream</button>
+      </div>
+      <div class="connstatus" id="connStatus">Idle — no live connection. Uses the same FloodX API (<span class="safe">/stream</span>, <span class="safe">/ingest</span>).</div>
+      <div class="hint">Press <b>Connect</b> to receive real sensor readings for this zone, or <b>Test stream</b> for a local demo with no server.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════ RIGHT: safer route + map ═══════════ -->
+  <div class="col-map">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="panel" style="margin:0">
+        <h2>🧭 Safer route planner</h2>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <div style="flex:1"><label style="font-size:10px;color:var(--muted)">FROM (my zone)</label><select id="selFrom" style="width:100%"></select></div>
+          <div style="flex:1"><label style="font-size:10px;color:var(--muted)">DESTINATION</label><select id="selDst" style="width:100%"></select></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;margin-bottom:10px;cursor:pointer">
+          <input type="checkbox" id="chkAvoid" checked> Avoid currently flooded streets (auto)
+        </label>
+        <fieldset>
+          <legend>Additional road closures (modify route)</legend>
+          <div id="roadGrid" class="chips"></div>
+        </fieldset>
+        <button class="txt" style="width:100%;margin-top:2px;background:var(--card2)" onclick="recomputeRoutes()">🔄 Re-calculate safer route</button>
+        <div id="routeMeta" class="hint" style="margin-top:8px"></div>
+      </div>
+      <div class="panel" style="margin:0">
+        <h2>🛰️ Neighbourhood safety</h2>
+        <div class="chips" id="chipRow"></div>
+        <div class="hint" style="margin-top:9px">
+          <span class="safe">● Safe</span> · <span class="warn">● Watch / saturated</span> · <span class="dang">● Flood risk</span> — used by the route planner to pick the safer path.
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="route-box r1">
+        <h3>✅ Safer route <small>— recommended</small></h3>
+        <div class="route-steps" id="routeSteps">Select your zone & destination to plan a safer route.</div>
+        <div class="route-steps" id="routeWarn"></div>
+        <div class="route-meta" id="routeMetaAlt"></div>
+      </div>
+      <div class="route-box r2">
+        <h3>🔁 Alternative route <small>— if closure occurs</small></h3>
+        <div class="route-steps" id="routeStepsAlt">—</div>
+        <div class="route-meta" id="routeWarnAlt"></div>
+      </div>
+    </div>
+
+    <div style="position:relative;flex:1;min-height:0">
+      <div id="map"></div>
+      <div class="map-err" id="mapErr">⚠️ Map could not load.<br>Leaflet is loaded from a CDN — check internet / try again, or click to retry.<br><button class="txt" style="margin-top:10px;background:var(--card2)" onclick="bootMap()">Retry</button></div>
+      <button class="gotobox" onclick="focusRoute()">🧭 Show my route</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   FloodX 2.0 · Citizen SafeZone v2 — rebuilt with defensive
+   map bootstrap (CDN guard, tile fallback, size retries).
+   Data comes from the same API as the admin dashboard:
+     GET /stream (SSE) / WS /ws · POST /ingest · GET /latest
+   ═══════════════════════════════════════════════════════════ */
+const Q_SCALE = 10;                     // L/s stored → L/min shown (same scale as admin)
+const DS_ZONES = { 'Zone_1':'1st','Zone_2':'2nd','Zone_3':'3rd','Zone_4':'4th',
+                   'Zone_5':'5th','Zone_6':'6th','Zone_7':'7th','Zone_8':'8th' };
+
+const ZONES = [
+  { key:'Zone_1', idx:0, name:'1st Street',  lat:13.0841, lng:80.2675, color:'#3E7CB1', base:{rain:22, depth:6,  flow:38,  cap:150, block:8 } },
+  { key:'Zone_2', idx:1, name:'2nd Street',  lat:13.0846, lng:80.2685, color:'#7D3EB1', base:{rain:22, depth:12, flow:55,  cap:150, block:12} },
+  { key:'Zone_3', idx:2, name:'3rd Street',  lat:13.0835, lng:80.2692, color:'#3EB17D', base:{rain:74, depth:38, flow:126, cap:150, block:38} },
+  { key:'Zone_4', idx:3, name:'4th Street',  lat:13.0840, lng:80.2715, color:'#B15C3E', base:{rain:74, depth:29, flow:112, cap:140, block:26} },
+  { key:'Zone_5', idx:4, name:'5th Street',  lat:13.0829, lng:80.2720, color:'#B1A23E', base:{rain:74, depth:16, flow:74,  cap:140, block:20} },
+  { key:'Zone_6', idx:5, name:'6th Street',  lat:13.0837, lng:80.2732, color:'#3EB1B0', base:{rain:12, depth:4,  flow:20,  cap:130, block:6 } },
+  { key:'Zone_7', idx:6, name:'7th Street',  lat:13.0815, lng:80.2735, color:'#6C3EB1', base:{rain:9,  depth:3,  flow:15,  cap:120, block:4 } },
+  { key:'Zone_8', idx:7, name:'8th Street',  lat:13.0810, lng:80.2740, color:'#C96C3E', base:{rain:74, depth:33, flow:118, cap:125, block:31} },
+];
+const byKey = {}; ZONES.forEach(z => byKey[z.key] = z);
+
+/* street graph (undirected) — Chennai street grid, so detours exist */
+const EDGES = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],
+               [0,2],[1,3],[2,4],[3,5],[4,6],[5,7]];
+
+/* live state per zone: depth/flow/cap are in L/s; display multiplies by Q_SCALE */
+const LIVE = {};
+ZONES.forEach(z => {
+  const b = z.base;
+  LIVE[z.key] = { rain:b.rain, depth:b.depth, flow:b.flow, cap:b.cap,
+                  block:b.block, sat:Math.round(b.flow/b.cap*100), flood:0, ts:null };
+});
+
+/* ═════════  helpers  ═════════ */
+function haversine(a, b){
+  const R=6371, dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180,
+        s=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.asin(Math.sqrt(s));
+}
+function riskOf(z){
+  const L=LIVE[z.key];
+  if (L.flood===1) return 'CRITICAL';
+  if (L.sat>=75 || L.depth>=20) return 'MODERATE';
+  return 'LOW';
+}
+function riskColor(risk){ return risk==='CRITICAL'?'var(--red)':risk==='MODERATE'?'var(--orange)':'var(--green)'; }
+function streetName(k){ return byKey[k].name; }
+
+/* ═════════  selects  ═════════ */
+function fillSelects(){
+  ZONES.forEach(z=>{
+    const n = `${z.name}`;
+    document.getElementById('selMy').append(new Option(n, z.key));
+    document.getElementById('selFrom').append(new Option(n, z.key));
+    document.getElementById('selDst').append(new Option(n, z.key));
+  });
+  document.getElementById('selDst').value = 'Zone_6';
+}
+function roadGrid(){
+  const g = document.getElementById('roadGrid');
+  g.innerHTML='';
+  ZONES.forEach(z=>{
+    const l=document.createElement('label');
+    l.className='chip'; l.style.cursor='pointer';
+    const c=document.createElement('input'); c.type='checkbox';
+    c.id='close_'+z.idx; c.dataset.idx=z.idx;
+    c.style.accentColor='var(--red)';
+    l.appendChild(c);
+    const b=document.createElement('b'); b.textContent=z.name; l.appendChild(b);
+    const s=document.createElement('small'); s.textContent='closed'; l.appendChild(s);
+    g.appendChild(l);
+  });
+  document.getElementById('roadGrid').onchange = recomputeRoutes;
+}
+
+/* ═════════  live zone panel  ═════════ */
+function updateMyZone(){
+  const k = document.getElementById('selMy').value || 'Zone_1';
+  const z = byKey[k], L = LIVE[k], risk = riskOf(z);
+  document.getElementById('myRisk').textContent = risk;
+  document.getElementById('myRisk').className = 'risk-badge risk-' + risk;
+  document.getElementById('mRain').textContent = Math.round(L.rain);
+  document.getElementById('mDepth').textContent = Math.round(L.depth*10)/10;
+  document.getElementById('mFlow').textContent = Math.round(L.flow*Q_SCALE);
+  document.getElementById('mSat').textContent = Math.round(L.sat);
+  document.getElementById('mCap').textContent = Math.round(L.cap*Q_SCALE);
+  document.getElementById('mBlock').textContent = Math.round(L.block||0)+'%';
+  const satBar = document.getElementById('satBar');
+  satBar.style.width = Math.min(100, L.sat) + '%';
+  satBar.style.background = L.sat>=90?'var(--red)':L.sat>=75?'var(--orange)':'var(--green)';
+  const cctv = L.flood===1?'Flood detected':L.depth>18?'Water rising':L.depth>8?'Ponding visible':'Clear';
+  document.getElementById('mCctv').textContent = cctv;
+  document.getElementById('mCctv').style.color = L.flood===1?'var(--red)':L.depth>18?'var(--orange)':'var(--accent)';
+  document.getElementById('mTs').textContent = L.ts || '—';
+  const nb = document.getElementById('warnBanner');
+  if (risk==='CRITICAL') {
+    document.getElementById('warnStreet').textContent = z.name.toLowerCase();
+    document.getElementById('warnAvoid').textContent = safeHintFrom(k);
+    nb.classList.add('on');
+  } else nb.classList.remove('on');
+  updateChips(); renderMap(); recomputeRoutes();
+}
+function safeHintFrom(k){
+  const n = [];
+  EDGES.forEach(e=>{
+    if (e[0]===byKey[k].idx) n.push(ZONES[e[1]].name);
+    if (e[1]===byKey[k].idx) n.push(ZONES[e[0]].name);
+  });
+  return n.length ? n.join(', ') : 'low-lying routes';
+}
+
+function updateChips(){
+  const row = document.getElementById('chipRow');
+  row.innerHTML='';
+  ZONES.forEach(z=>{
+    const L=LIVE[z.key], r=riskOf(z);
+    const d=document.createElement('div');
+    d.className='chip';
+    d.innerHTML = `<span class="sdot" style="background:${riskColor(r)};box-shadow:0 0 6px ${riskColor(r)}"></span><b>${z.name}</b><small>${r}</small>`;
+    row.appendChild(d);
+  });
+}
+
+/* ═════════  route engine (Dijkstra over dynamic safety weights)  ═════════ */
+function isBlocked(i){ return document.getElementById('close_'+i) && document.getElementById('close_'+i).checked; }
+function nodeCost(i, avoid){
+  const z = ZONES[i], L = LIVE[z.key];
+  if (isBlocked(i)) return Infinity;
+  if (avoid && (L.flood===1 || riskOf(z)==='CRITICAL')) return 9;    // walkable at heavy penalty
+  if (L.sat>=75) return 2;
+  return 1;
+}
+function findPath(from, to, avoid, blockEdge){
+  const n=ZONES.length, INF=Infinity, dist=Array(n).fill(INF), prev=Array(n).fill(-1), seen=Array(n).fill(false);
+  dist[from]=0;
+  for(let it=0;it<n;it++){
+    let u=-1, best=INF;
+    for(let i=0;i<n;i++) if(!seen[i] && dist[i]<best){best=dist[i]; u=i;}
+    if(u===-1||u===to) break;
+    seen[u]=true;
+    EDGES.forEach(e=>{
+      let v=-1;
+      if(e[0]===u) v=e[1]; else if(e[1]===u) v=e[0];
+      if(v===-1) return;
+      if(blockEdge && (e[0]===blockEdge[0]&&e[1]===blockEdge[1] || e[0]===blockEdge[1]&&e[1]===blockEdge[0])) return;
+      const w = nodeCost(v, avoid);
+      if(w===Infinity) return;
+      const alt = dist[u]+w+haversine(ZONES[u],ZONES[v])*6;
+      if(alt<dist[v]){dist[v]=alt; prev[v]=u;}
+    });
+  }
+  if(dist[to]===INF) return null;
+  const path=[]; let c=to;
+  while(c!==-1){path.unshift(c); c=prev[c];}
+  return path;
+}
+function routeLen(path){
+  let km=0;
+  for(let i=0;i<path.length-1;i++) km+=haversine(ZONES[path[i]],ZONES[path[i+1]]);
+  return km;
+}
+function recomputeRoutes(){
+  const from = byKey[document.getElementById('selFrom').value].idx;
+  const to   = byKey[document.getElementById('selDst').value].idx;
+  const avoid= document.getElementById('chkAvoid').checked;
+  if(from===to){ document.getElementById('routeSteps').innerHTML='You are already at the destination.'; return; }
+
+  const p1 = findPath(from, to, avoid, null);
+  document.getElementById('routeSteps').innerHTML = p1 ? stepsHTML(p1, avoid) : '<span class="dang">⚠ No safe route — every path is flooded. Consider sheltering in place.</span>';
+  document.getElementById('routeWarn').innerHTML = p1 ? warnsHTML(p1, avoid) : '';
+  document.getElementById('routeMetaAlt').innerHTML = p1 ? `≈ ${routeLen(p1).toFixed(2)} km · ${p1.length-1} junction${p1.length>2?'s':''} · avoids flood hotspots` : '';
+
+  /* alternate via Yen-ish: block each edge of p1 in turn, keep the shortest different path */
+  let alt=null;
+  for(let i=0;i<p1.length-1;i++){
+    const p=findPath(from, to, avoid, [p1[i], p1[i+1]]);
+    if(p && p.join(',')!==p1.join(',') && (!alt || routeLen(p)<routeLen(alt))) alt=p;
+  }
+  if(alt){
+    document.getElementById('routeStepsAlt').innerHTML = stepsHTML(alt, avoid);
+    document.getElementById('routeWarnAlt').innerHTML = `≈ ${routeLen(alt).toFixed(2)} km · avoids a closure on the primary route`;
+  } else {
+    document.getElementById('routeStepsAlt').innerHTML = 'No clear alternative (shared bottleneck).';
+    document.getElementById('routeWarnAlt').innerHTML = '';
+  }
+  renderMap();
+  drawRoutes();
+}
+function stepsHTML(path, avoid){
+  const parts = path.map((i,ix)=>{
+    const z=ZONES[i], L=LIVE[z.key], r=riskOf(z);
+    const tag = r==='CRITICAL'?' <span class="dang">(flooded — do not enter)</span>'
+              : r==='MODERATE'?' <span class="warn">(saturated — drive slowly)</span>'
+              : ' <span class="safe">(safe)</span>';
+    return `<b>${ix+1}.</b> ${z.name}${tag}`;
+  });
+  return parts.join(' → ');
+}
+function warnsHTML(path, avoid){
+  const hot = path.filter(i => riskOf(ZONES[i])!=='LOW');
+  if(!hot.length) return '<span class="route-warn" style="color:var(--green)">✅ All streets on this route are currently safe.</span>';
+  return '<span class="route-warn">⚠ ' + hot.map(i=>ZONES[i].name+' '+riskOf(ZONES[i])).join(', ') + '</span>';
+}
+
+/* ═════════  map (defensive bootstrap)  ═════════ */
+let map=null, mapLoaded=false, layNodes=null, layEdges=null, layRoute=null;
+let tileOk=false, tileLayers=[], bootAttempts=0;
+function mapErr(msg){
+  const el=document.getElementById('mapErr');
+  if(el){ el.innerHTML=msg+'<br><button class="txt" style="margin-top:10px;background:var(--card2)" onclick="bootMap()">Retry</button>'; el.classList.add('on'); }
+}
+function switchTiles(){
+  tileOk=true;
+  if(!map) return;
+  tileLayers.forEach(t=>{ try{ map.removeLayer(t); }catch(e){} });
+  tileLayers=[];
+  const carto=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    { maxZoom:19, attribution:'© OpenStreetMap © CARTO' });
+  tileLayers.push(carto); carto.addTo(map);
+}
+function initMap(){
+  const el=document.getElementById('map');
+  if(!el) return false;
+  if(!window.L || !L.map){
+    if(!bootAttempts){ try{ window.__loadLeaflet(); }catch(e){} }
+    return false;
+  }
+  try {
+    if(map){ try{ map.remove(); }catch(e){} map=null; }
+    const rect=el.getBoundingClientRect();
+    if(rect.height<100 || rect.width<100) return false;     // container too small — retry later
+    map = L.map('map', { zoomControl:true }).setView([13.0832, 80.2705], 15);
+    map.on('tileerror', ()=>{ if(!tileOk) switchTiles(); });
+    const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom:19, attribution:'© OpenStreetMap' });
+    tileLayers.push(osm); osm.addTo(map);
+    layNodes = L.layerGroup().addTo(map);
+    layEdges = L.layerGroup().addTo(map);
+    layRoute = L.layerGroup().addTo(map);
+    mapLoaded=true;
+    const me=document.getElementById('mapErr'); if(me) me.classList.remove('on');
+    setTimeout(()=>{ try{ if(map) map.invalidateSize(); }catch(e){} }, 200);
+    return true;
+  } catch(e){
+    mapErr('Map engine could not start.');
+    return false;
+  }
+}
+function bootMap(){
+  if(initMap()) return;
+  bootAttempts++;
+  if(bootAttempts>8){ mapErr('⚠️ Map could not load. Leaflet is loaded from a CDN — check internet, then retry.'); return; }
+  setTimeout(bootMap, 300);
+  const me=document.getElementById('mapErr');
+  if(me && bootAttempts>2){ me.classList.add('on'); me.innerHTML='⏳ Loading map engine…'; }
+}
+window.addEventListener('resize', ()=>{ if(map) setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} }, 150); });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && map) setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} }, 150); });
+
+function renderMap(){
+  if(!map || !layEdges) return;
+  layEdges.clearLayers(); layNodes.clearLayers();
+  EDGES.forEach(e=>{
+    L.polyline([ZONES[e[0]], ZONES[e[1]]], {color:'#2A3D5C', weight:2}).addTo(layEdges);
+  });
+  ZONES.forEach(z=>{
+    const Lk=LIVE[z.key], r=riskOf(z);
+    const col = r==='CRITICAL'?'#F56565':r==='MODERATE'?'#ED8936':'#48BB78';
+    const mz = byKey[z.key];
+    const mk = L.circleMarker([z.lat,z.lng], {
+      radius: z.key===document.getElementById('selMy').value?11:8,
+      color:'#0B1320', weight:2, fillColor:col, fillOpacity:.95,
+      dashArray: z.key===document.getElementById('selMy').value?'4 3':null
+    }).addTo(layNodes);
+    const flowTxt = Lk.flood===1 ? '🚨 flooded next 30 min'
+                               : 'flow ' + Math.round(Lk.flow*Q_SCALE) + ' L/min';
+    mk.bindPopup(`<b>${z.name}</b><br>${r} · ${Math.round(Lk.sat)}% saturation<br>${flowTxt}`);
+  });
+}
+function renderRoute(ids, color, dash, group){
+  if(!group) return;
+  group.clearLayers();
+  if(!ids) return;
+  for(let i=0;i<ids.length-1;i++){
+    L.polyline([ZONES[ids[i]], ZONES[ids[i+1]]], {color, weight:5, opacity:.85, dashArray:dash}).addTo(group);
+  }
+}
+function focusRoute(){
+  if(!map) return;
+  const k = document.getElementById('selMy').value, z=byKey[k];
+  map.flyTo([z.lat, z.lng], 16, {duration:.6});
+}
+let lastPath=null;
+function drawRoutes(){
+  if(!map || !layRoute) return;
+  const from = byKey[document.getElementById('selFrom').value].idx;
+  const to   = byKey[document.getElementById('selDst').value].idx;
+  const avoid= document.getElementById('chkAvoid').checked;
+  const p1 = findPath(from, to, avoid, null);
+  lastPath = p1;
+  renderRoute(p1, '#48BB78', null, layRoute);
+}
+
+/* ═════════  live feed (SSE / WS / test)  ═════════ */
+let liveConn=null, testTimer=null, testIdx=0, liveOn=false;
+function setAPIConnected(ok){
+  document.getElementById('apiDot').style.background = ok?'var(--green)':'var(--red)';
+  document.getElementById('apiTxt').textContent = ok?'API LIVE':'API offline';
+}
+function numVal(v){ const n=parseFloat(v); return isNaN(n)?null:n; }
+function ingest(raw){
+  let obj=raw;
+  if(typeof raw==='string'){
+    const t=raw.trim();
+    if(!t || t.indexOf(':')===0 || /^(retry|event|id):/.test(t)) return;
+    if(t.charAt(0)==='{'){ try{ obj=JSON.parse(t);}catch(e){ return; } }
+    else {
+      const c=t.split(',');
+      obj = { timestamp:(c[0]||'').trim(), zone:(c[1]||'').trim(),
+        rainfall_intensity_mm_hr:numVal(c[2]), water_level_cm:numVal(c[3]),
+        flow_rate_lps:numVal(c[4]), drain_capacity_lps:numVal(c[5]),
+        blockage_pct:numVal(c[6]), drain_saturation_pct:numVal(c[7]),
+        flood_next_30min:numVal(c[8])||0 };
+    }
+  }
+  const zone = String(obj && (obj.zone || obj.zone_id) || '').trim();
+  const L = LIVE[zone];
+  if(!L || !byKey[zone]) return;
+  if(obj.water_level_cm!=null) L.depth=Math.max(0,obj.water_level_cm);
+  if(obj.flow_rate_lps!=null) L.flow=Math.max(0,obj.flow_rate_lps);
+  if(obj.drain_capacity_lps!=null && obj.drain_capacity_lps>0) L.cap=obj.drain_capacity_lps;
+  if(obj.rainfall_intensity_mm_hr!=null) L.rain=Math.max(0,obj.rainfall_intensity_mm_hr);
+  if(obj.blockage_pct!=null) L.block=Math.max(0,obj.blockage_pct);
+  if(obj.drain_saturation_pct!=null) L.sat=Math.max(0,obj.drain_saturation_pct);
+  else L.sat=Math.round(L.flow/L.cap*100);
+  L.flood = Math.abs(numVal(obj.flood_next_30min)||0)===1 ? 1 : 0;
+  L.ts = obj.timestamp || obj.ts || null;
+  updateMyZone();
+}
+function feedStatus(html, color){
+  const el=document.getElementById('connStatus');
+  el.innerHTML=html; el.style.color=color||'var(--muted)';
+}
+function connectFeed(){
+  if(liveConn){ try{liveConn.close();}catch(e){} liveConn=null; setAPIConnected(false); feedStatus('Disconnected.'); document.getElementById('btnConn').textContent='🔌 Connect'; return; }
+  stopTest();
+  const url = location.protocol==='file:' ? prompt('API stream URL:','http://127.0.0.1:8000/stream')
+                                         : location.origin + '/stream';
+  if(!url) return;
+  const es = new EventSource(url);
+  liveConn = es;
+  document.getElementById('btnConn').textContent = '⏻ Disconnect';
+  es.onopen = () => { setAPIConnected(true); feedStatus(`✔ Connected to <b>${url}</b> — updating your zone live.`, 'var(--green)'); };
+  es.onmessage = e => { ingest(e.data); setAPIConnected(true); };
+  es.onerror  = () => setAPIConnected(false);
+}
+function testFeed(){
+  if(testTimer){ clearInterval(testTimer); testTimer=null;
+    document.getElementById('btnTest').textContent='🧪 Test stream'; feedStatus('Test stream stopped.'); return; }
+  if(liveConn){ try{liveConn.close();}catch(e){} liveConn=null; }
+  document.getElementById('btnTest').textContent='⏹ Stop test';
+  feedStatus('🧪 Test stream running — one reading every 2 s. Click Stop to end.', 'var(--green)');
+  setAPIConnected(true);
+  testTimer = setInterval(()=>{
+    const z = ZONES[testIdx % ZONES.length]; testIdx++;
+    const L=LIVE[z.key];
+    const storm=Math.random()<0.35;
+    const rain = storm?40+Math.random()*110:5+Math.random()*30;
+    const depth=Math.min(60, Math.max(0,L.depth+(Math.random()-0.5)*3+(storm?4:-1)));
+    const cap=L.cap||130;
+    const flow=Math.min(cap*1.15, Math.max(0,L.flow+(Math.random()-0.5)*8+((depth>30)?10:(depth>18)?5:2)));
+    const sat=Math.min(125, Math.max(3, Math.round(flow/cap*100)));
+    const flood=(storm&&depth>22&&sat>80)?1:0;
+    ingest({ timestamp:new Date().toISOString().slice(0,19).replace('T',' '),
+             zone:z.key, rainfall_intensity_mm_hr:Math.round(rain),
+             water_level_cm:Math.round(depth*10)/10, flow_rate_lps:Math.round(flow),
+             drain_capacity_lps:cap, blockage_pct:L.block, drain_saturation_pct:sat,
+             flood_next_30min:flood });
+  }, 2000);
+}
+function stopTest(){ clearInterval(testTimer); testTimer=null; }
+
+/* ═════════  file:// guard  ═════════ */
+function hideFileBanner(){
+  const b = document.getElementById('fileBanner');
+  if (b) b.classList.remove('on');
+}
+function showFileBanner(){
+  const b = document.getElementById('fileBanner');
+  if (!b) return;
+  b.innerHTML = '<div style="display:flex;align-items:center;gap:10px">' +
+    '<span style="flex:1">📄 <b>Direct-open mode (file).</b> The live server feed and webcam need <b>http://127.0.0.1:8000/userv2</b>. A local demo feed is running for you now.</span>' +
+    '<span style="white-space:nowrap"><button class="txt" style="background:var(--card2)" onclick="location.href=\'http://127.0.0.1:8000/userv2\'">Open on server →</button> ' +
+    '<button class="txt" style="background:var(--card2)" onclick="hideFileBanner()">✕</button></span></div>';
+  b.classList.add('on');
+}
+if (location.protocol === 'file:'){ setTimeout(showFileBanner, 300); }
+
+/* ═════════  boot  ═════════ */
+fillSelects(); roadGrid();
+updateChips(); updateMyZone();
+setInterval(()=>{ document.getElementById('clock').textContent =
+  new Date().toLocaleTimeString('en-IN',{hour12:false})+' IST'; },1000);
+if(location.protocol!=='file:') setTimeout(connectFeed, 400);
+else setTimeout(()=>{ try{ testFeed(); }catch(e){} }, 900);
+['selMy','selFrom','selDst','chkAvoid'].forEach(id =>
+  document.getElementById(id).addEventListener('change', ()=>{ if(id==='selMy') updateMyZone(); else recomputeRoutes(); }));
+setTimeout(bootMap, 150);
+setTimeout(()=>{ if(document.getElementById('selMy')) focusRoute(); }, 900);
+window.addEventListener('load', ()=>{ if(map) setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} }, 200); });
+console.log('FloodX 2.0 Citizen SafeZone v2 booting — defensive map mode enabled.');
+</script>
+</body>
+</html>

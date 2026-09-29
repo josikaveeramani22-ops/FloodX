@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Runtime data (keep the bundled demo CSV: data/synthetic.csv)
+data/floodx.db
+*.db-journal
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+Test/
+
+# Local machine assets (not needed in the repo)
+Downloads/
+*.pptx
+*.docx
+
+# Not part of the deployable app
+github-upload/
+app.py
+create_*.py
+wildguard_pattern_risk.py
+Block_Diagram_Flood_System.png
+*_Draft.md
+*Research_Core*.md
+```html.txt
+floodx_dashboard.html
+floodx_user.html

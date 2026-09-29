@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloodX 2.0 — Live Dashboard (v2)</title>
+<script>
+/* Guard: if the Leaflet CDN fails, show a message instead of crashing later. */
+window.__L = false;
+</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --bg:#0B1320; --bg2:#111C2E; --card:#152238; --card2:#1B2A42;
+  --border:#24364F; --text:#E8EEF7; --muted:#8CA3BF; --accent:#4FD1C5;
+  --green:#48BB78; --yellow:#E0A63C; --orange:#ED8936; --red:#F56565;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Segoe UI',Calibri,sans-serif;background:var(--bg);color:var(--text);overflow:hidden;display:flex;flex-direction:column}
+button{font-family:inherit;cursor:pointer}
+select,input[type=text]{background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12px;outline:none}
+select:focus,input[type=text]:focus{border-color:var(--accent)}
+
+.navbar{height:50px;flex:none;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 16px;z-index:900}
+.brand{display:flex;align-items:center;gap:8px}
+.brand h1{font-size:18px;font-weight:800}
+.brand h1 span{color:var(--accent)}
+.badge{background:var(--accent);color:var(--bg);font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px}
+.nav-status{display:flex;align-items:center;gap:12px;font-size:11px;color:var(--muted);margin-left:auto}
+.nav-status .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-green{background:var(--green)}
+.dot-yellow{background:var(--yellow)}
+.dot-red{background:var(--red)}
+.clock{font-variant-numeric:tabular-nums;font-weight:600;color:var(--text)}
+.toplink{color:var(--accent);text-decoration:none;font-weight:600}
+
+.tabbar{height:40px;flex:none;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;padding:0 14px;overflow-x:auto}
+.tab{background:transparent;border:none;color:var(--muted);font-size:12px;padding:8px 12px;border-radius:8px;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.active{background:var(--card);color:var(--accent);font-weight:700}
+.tpill{font-size:9px;background:var(--card2);border-radius:8px;padding:2px 6px;color:var(--muted)}
+.tpill.amber{color:var(--orange)}
+
+.content{flex:1;min-height:0;position:relative}
+.view{display:none;height:100%;position:absolute;inset:0}
+.view.active{display:block}
+.fullview{padding:18px;overflow-y:auto;height:100%}
+
+/* ═══ map layout ═══ */
+.map-layout{display:grid;grid-template-columns:250px 1fr 250px;grid-template-rows:1fr auto;height:100%}
+.map-main{position:relative;grid-column:2;grid-row:1;min-height:0}
+#map{position:absolute;inset:0;height:100%;width:100%;z-index:1;background:#0E1A2C}
+.map-err{position:absolute;inset:0;z-index:400;display:none;align-items:center;justify-content:center;text-align:center;background:var(--bg);font-size:13px;color:var(--red);padding:20px;line-height:1.8}
+.map-err.on{display:flex}
+.side-left{grid-column:1;grid-row:1;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;padding:12px}
+.side-right{grid-column:3;grid-row:1;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;padding:12px}
+.bottom-bar{grid-column:1/4;grid-row:2;display:flex;gap:10px;background:var(--bg2);border-top:1px solid var(--border);padding:10px 12px}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px}
+.panel h3{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.bb-street{flex:2;min-width:360px;max-width:480px;overflow-y:auto;max-height:210px}
+.bb-alerts{flex:2;min-width:280px;overflow-y:auto;max-height:210px}
+.bb-routes{flex:1.6;min-width:230px;overflow-y:auto;max-height:210px}
+
+.street-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.st-name{font-size:15px;font-weight:700;color:var(--text)}
+.metrics{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}
+.metric{background:var(--card2);border-radius:8px;padding:8px}
+.m-label{font-size:9px;color:var(--muted);margin-bottom:2px}
+.m-value{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.m-unit{font-size:9px;color:var(--muted);font-weight:400;margin-left:2px}
+.progress-bar{height:5px;background:var(--bg2);border-radius:3px;margin-top:5px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px}
+
+.cctv-frame{margin-top:8px;border-radius:9px;overflow:hidden;border:1px solid var(--border);background:#0A1628;min-height:64px;display:flex;align-items:center;justify-content:center;position:relative;color:var(--muted);font-size:11px;cursor:pointer}
+.cctv-frame video,.cctv-frame img{width:100%;max-height:180px;object-fit:cover;background:#000;display:none}
+.cctv-rec{position:absolute;top:5px;left:7px;background:var(--red);color:#fff;font-size:8px;font-weight:800;padding:2px 6px;border-radius:3px;z-index:2}
+.cctv-time{position:absolute;top:5px;right:7px;font-size:8px;font-family:monospace;color:#8fd0ff;z-index:2}
+.cctv-watch{position:absolute;right:8px;bottom:6px;font-size:9px;color:var(--accent);font-weight:800;z-index:2}
+
+.risk-badge{font-size:10px;font-weight:800;padding:2px 9px;border-radius:11px}
+.risk-red{background:rgba(245,101,101,.18);color:var(--red)}
+.risk-orange{background:rgba(237,137,54,.16);color:var(--orange)}
+.risk-yellow{background:rgba(224,166,60,.15);color:var(--yellow)}
+.risk-green{background:rgba(72,187,120,.15);color:var(--green)}
+
+.zone-tree{display:flex;flex-direction:column;gap:5px}
+.zone-list{font-size:11px}
+.zone-list div{display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:6px;margin-bottom:3px;background:var(--card)}
+.zone-list b{font-weight:600}
+.ztag{font-size:9px;padding:1px 7px;border-radius:8px;font-weight:800}
+
+.summary{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.sum-chip{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:6px 12px;text-align:center}
+.c-val{font-size:18px;font-weight:800}
+.c-lab{font-size:9px;color:var(--muted);text-transform:uppercase}
+
+.legend{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:10px;margin-top:8px}
+.legend h4{font-size:9px;color:var(--muted);margin-bottom:5px}
+.legend-row{display:flex;align-items:center;gap:6px;margin:3px 0;color:var(--muted)}
+.legend-swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+.feed-box{font-size:11px}
+.feed-box label{font-size:10px;color:var(--muted)}
+.feed-controls{display:flex;gap:5px;margin:6px 0}
+.feed-controls button{flex:1;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px;font-size:11px}
+.feed-controls button:hover{border-color:var(--accent)}
+.feed-status{font-size:10px;color:var(--muted);line-height:1.5}
+
+.alert-item{padding:8px 10px;border-radius:8px;margin-bottom:6px;background:var(--card);border-left:4px solid var(--red);font-size:11px}
+.alert-item.low{border-left-color:var(--yellow)}
+.a-title{font-weight:700;margin-bottom:2px}
+.a-time{color:var(--muted);font-size:9px;margin-top:3px}
+
+.route-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:11px}
+.route-card.reco{border-color:var(--green)}
+.route-steps{line-height:1.6}
+.route-meta{color:var(--muted);font-size:9px;margin-top:3px}
+
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.dcard{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px}
+.dcard h4{font-size:12px;margin-bottom:5px}
+.dm-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}
+.dm-row span:first-child{color:var(--muted)}
+.chip{font-size:9px;font-weight:800;padding:1px 8px;border-radius:8px}
+
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.scard{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px}
+.scard h4{font-size:12px;margin-bottom:4px}
+.ok{color:var(--green)}.warn{color:var(--yellow)}.bad{color:var(--red)}
+
+.alert-full{display:flex;flex-direction:column;gap:7px}
+
+.btn{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 12px;font-size:12px}
+.btn:hover{border-color:var(--accent)}
+.file-banner{display:none;background:linear-gradient(90deg,rgba(224,166,60,.18),rgba(224,166,60,.06));border-bottom:1px solid var(--yellow);color:var(--text);font-size:12px;line-height:1.7;padding:10px 18px}
+.file-banner.on{display:block}
+.file-banner b{color:var(--yellow)}
+
+/* camera modal */
+.cam-overlay{position:fixed;inset:0;background:rgba(4,10,20,.78);z-index:3000;display:none;align-items:center;justify-content:center}
+.cam-modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;width:min(680px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.cam-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.cam-head b{color:var(--accent)}
+.cam-head button{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;font-size:12px}
+.cam-frame{width:100%;border-radius:8px;background:#000;min-height:260px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;overflow:hidden}
+.cam-frame video,.cam-frame img{width:100%;max-height:520px;display:none;background:#000}
+.cam-controls{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.cam-controls button{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:12px}
+.cam-controls .txt{flex:1;min-width:220px}
+.cam-status{width:100%;font-size:11px;color:var(--muted);line-height:1.5}
+
+/* toast overlay */
+.toast-wrap{position:fixed;left:0;right:0;bottom:16px;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:4000;pointer-events:none}
+.toast{pointer-events:auto;background:var(--card2);border:1px solid var(--border);border-left:4px solid var(--red);border-radius:9px;padding:9px 14px;font-size:12px;max-width:520px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast b{color:var(--red)}
+.toast .tt{color:var(--muted);font-size:10px;margin-top:2px}
+.ds-bar{display:flex;gap:5px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.ds-bar button{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:5px 9px;font-size:10px}
+.ds-bar input[type=range]{flex:1;min-width:100px;accent-color:var(--accent)}
+.ds-meta{font-size:10px;color:var(--muted);margin-top:4px}
+.hint{font-size:10px;color:var(--muted);line-height:1.6}
+.safe{color:var(--green)}
+</style>
+</head>
+<body>
+
+<div class="file-banner" id="fileBanner"></div>
+
+<!-- ═══════ NAVBAR ═══════ -->
+<div class="navbar">
+  <div class="brand"><h1>🌊 FloodX <span>2.0</span></h1><div class="badge">LIVE</div></div>
+  <div class="nav-status">
+    <span><span class="status-dot dot-green"></span>Radar Online</span>
+    <span><span class="status-dot dot-yellow" id="navSensDot"></span><span id="navSensTxt">Sensors 0/0</span></span>
+    <span><span class="status-dot dot-green"></span>Nowcasting ACTIVE</span>
+    <span><span class="status-dot dot-green" id="navRegionDot"></span><span id="navRegionTxt">Chennai</span></span>
+    <span id="navDs" style="display:none"></span>
+    <span><a class="toplink" href="/user">👤 Resident view →</a></span>
+    <span class="clock" id="clock"></span>
+  </div>
+</div>
+
+<!-- ═══════ TABS ═══════ -->
+<div class="tabbar">
+  <button class="tab active" data-view="viewMap" onclick="switchView('viewMap',this)">🗺️ Live Map <span class="tpill amber" id="tabStreetRisk">0 RISK</span></button>
+  <button class="tab" data-view="viewAlerts" onclick="switchView('viewAlerts',this)">🚨 Alerts</button>
+  <button class="tab" data-view="viewDrainHealth" onclick="switchView('viewDrainHealth',this)">🛠️ Drainage</button>
+  <button class="tab" data-view="viewRoutes" onclick="switchView('viewRoutes',this)">🚦 Routes</button>
+  <button class="tab" data-view="viewSensorHealth" onclick="switchView('viewSensorHealth',this)">📡 Sensors</button>
+  <button class="tab" data-view="viewAbout" onclick="switchView('viewAbout',this)">ℹ️ About</button>
+</div>
+
+<div class="content">
+
+  <!-- ═══════ MAP VIEW ═══════ -->
+  <div class="view active" id="viewMap">
+    <div class="map-layout">
+      <div class="side-left">
+        <div class="panel" style="margin-bottom:10px">
+          <h3>🗺️ ZONES / STREETS</h3>
+          <div class="zone-list" id="zoneList"></div>
+        </div>
+        <div class="panel">
+          <h3>🛰️ LIVE FEED</h3>
+          <div class="feed-box">
+            <label>Mode</label>
+            <select id="lfMode" style="width:100%;margin:4px 0">
+              <option value="sse">SSE /stream</option>
+              <option value="ws">WebSocket /ws</option>
+            </select>
+            <input type="text" id="lfUrl" placeholder="Stream URL (empty = this server)">
+            <div class="feed-controls">
+              <button id="lfConnectBtn" onclick="connectLive()">🔌 Connect</button>
+              <button id="lfTestBtn" onclick="startTestStream()">🧪 Test Stream</button>
+            </div>
+            <div class="feed-status" id="lfStatus">Idle.</div>
+            <div style="margin-top:8px;padding:8px;background:var(--card);border:1px dashed var(--border);border-radius:8px;font-size:11px;line-height:1.7">
+              <b>📟 ESP32 integration</b><br>
+              <span style="color:var(--muted)">The dashboard screens on <b>one reading</b> at boot, then updates in real time as the ESP32 posts each reading to the API.</span>
+              <button id="espBtn" class="btn" style="width:100%;margin:7px 0" onclick="sendSampleESP32()">📤 Send 1 ESP32 reading (demo)</button>
+              <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px;font-family:Consolas,monospace;font-size:10px;white-space:pre-wrap;word-break:break-all">POST <span id="espUrl">/ingest</span><br>{"zone":"Zone_3","water_level_cm":38,"flow_rate_lps":126,"drain_capacity_lps":150,"flood_next_30min":1}</div>
+              <div style="color:var(--muted);margin-top:5px">Copy the <b>esp32_floodx.ino</b> sketch (same project folder) and it pushes this JSON every cycle.</div>
+            </div>
+            <label style="display:block;margin-top:8px">Dataset CSV (replay)</label>
+            <input type="file" id="dsFile" accept=".csv" style="width:100%;font-size:10px;margin:4px 0">
+            <div id="dsControls" style="display:none">
+              <div class="ds-bar">
+                <button id="dsPrevBtn" onclick="stepDataset(-1)">⏮ Prev</button>
+                <button id="dsPlayBtn" onclick="togglePlay()">▶ Play</button>
+                <button id="dsNextBtn" onclick="stepDataset(1)">⏭ Next</button>
+              </div>
+              <div class="ds-bar"><input type="range" id="dsRange" min="0" value="0" oninput="seekDataset(this.value)"></div>
+              <div class="ds-meta"><span id="dsTs">—</span> · <span id="dsPos">0 / 0</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">
+          <h4>MAP OVERLAYS</h4>
+          <div class="legend-row"><span class="legend-swatch" style="background:var(--green)"></span>Safe street (LOW)</div>
+          <div class="legend-row"><span class="legend-swatch" style="background:var(--yellow)"></span>Watch (MODERATE)</div>
+          <div class="legend-row"><span class="legend-swatch" style="background:var(--red)"></span>Critical / overflow</div>
+          <div class="legend-row"><span class="legend-swatch" style="background:var(--accent)"></span>Recommended route</div>
+        </div>
+      </div>
+
+      <div class="map-main">
+        <div id="map"></div>
+        <div class="map-err" id="mapErr">⚠️ Map could not load.<br>Leaflet is loaded from a CDN — check internet / try again, or click to retry.<br><button class="btn" style="margin-top:10px" onclick="mapErrRetry()">Retry</button></div>
+      </div>
+
+      <div class="side-right">
+        <div class="summary">
+          <div class="sum-chip"><div class="c-val" style="color:var(--red)" id="sumRed">0</div><div class="c-lab">Critical</div></div>
+          <div class="sum-chip"><div class="c-val" style="color:var(--yellow)" id="sumYel">0</div><div class="c-lab">At Risk</div></div>
+          <div class="sum-chip"><div class="c-val" style="color:var(--green)" id="sumGreen">0</div><div class="c-lab">Safe</div></div>
+          <div class="sum-chip"><div class="c-val" style="color:var(--accent)" id="sumSens">0</div><div class="c-lab">Sensors</div></div>
+        </div>
+        <div class="panel">
+          <h3>🛠️ DRAINAGE HEALTH</h3>
+          <div class="zone-list" id="drainMini"></div>
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <div class="panel bb-street">
+          <div class="street-header">
+            <div class="st-name" id="stName">— Select a street —</div>
+            <div class="risk-badge risk-green" id="stBadge">NO DATA</div>
+          </div>
+          <div id="stMetrics" style="font-size:11px;color:var(--muted)">Click a street on the map or in the zone list.</div>
+          <div class="cctv-frame" id="cctvFrame" onclick="openCam(selectedStreetKey)">
+            <span class="cctv-rec">● LIVE</span>
+            <span class="cctv-time" id="cctvTime">CCTV-—</span>
+            <video id="cctvVideo" autoplay playsinline muted></video>
+            <img id="cctvImg" alt="camera stream">
+            <span id="cctvLabel">No camera feed — click to open</span>
+            <span class="cctv-watch" id="cctvWatch">▶ WATCH LIVE</span>
+          </div>
+        </div>
+        <div class="panel bb-alerts">
+          <h3>🚨 RECENT ALERTS</h3>
+          <div id="alertsList"></div>
+        </div>
+        <div class="panel bb-routes">
+          <h3>🚦 SAFER ROUTE</h3>
+          <div class="hint" id="routeContextMini"></div>
+          <div id="routesListMini"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ ALERTS VIEW ═══════ -->
+  <div class="view" id="viewAlerts">
+    <div class="fullview">
+      <h2 style="color:var(--accent);margin-bottom:12px">🚨 ALERT LOG</h2>
+      <div class="alert-full" id="alertsFull"></div>
+    </div>
+  </div>
+
+  <!-- ═══════ DRAIN VIEW ═══════ -->
+  <div class="view" id="viewDrainHealth">
+    <div class="fullview">
+      <h2 style="color:var(--accent);margin-bottom:12px">🛠️ DRAINAGE HEALTH</h2>
+      <div class="dgrid" id="drainGrid"></div>
+    </div>
+  </div>
+
+  <!-- ═══════ ROUTES VIEW ═══════ -->
+  <div class="view" id="viewRoutes">
+    <div class="fullview">
+      <h2 style="color:var(--accent);margin-bottom:12px">🚦 SAFER ROUTES</h2>
+      <div class="hint">Routes avoid streets currently at CRITICAL flood risk. Select a street on the map to plan from it.</div>
+      <div id="routesFull" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- ═══════ SENSORS VIEW ═══════ -->
+  <div class="view" id="viewSensorHealth">
+    <div class="fullview">
+      <h2 style="color:var(--accent);margin-bottom:12px">📡 SENSOR HEALTH</h2>
+      <div class="sgrid" id="sensorGrid"></div>
+    </div>
+  </div>
+
+  <!-- ═══════ ABOUT VIEW ═══════ -->
+  <div class="view" id="viewAbout">
+    <div class="fullview">
+      <h2 style="color:var(--accent);margin-bottom:12px">ℹ️ ABOUT</h2>
+      <div class="panel">
+        <p class="hint"><b style="color:var(--text)">FloodX 2.0</b> — real-time urban flood nowcasting &amp; safer-route guidance.<br><br>
+        • Tech: Python · FastAPI · Pydantic · Uvicorn · SQLite · SSE / WebSocket · HTML5/CSS3/JS · Leaflet + OpenStreetMap.<br>
+        • Flow: sensors → <b style="color:var(--accent)">POST /ingest</b> → validate → SQLite → broadcast → dashboards update live.<br>
+        • SoS: water level (cm), flow (L/s ×10 = L/min shown), rainfall (mm/hr), drain saturation %, CCTV.<br>
+        • Data: synthetic 2,000-row CSV (8 zones/streets) for demo; same pipeline accepts real ESP32 sensor JSON.<br>
+        • Interfaces: this admin view (city-wide) and the resident view (<b style="color:var(--accent)">/user</b>) with safer-route planning.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ CAMERA MODAL ═══════ -->
+<div class="cam-overlay" id="camOverlay" onclick="if(event.target===this)closeCam()">
+  <div class="cam-modal">
+    <div class="cam-head"><b id="camTitle">📹 Live Camera</b><span style="flex:1"></span><button onclick="closeCam()">✕ Close</button></div>
+    <div class="cam-frame">
+      <video id="camVideo" autoplay playsinline muted></video>
+      <img id="camImg" alt="camera stream">
+      <span id="camPlaceholder">Select a source…</span>
+    </div>
+    <div class="cam-controls">
+      <button onclick="camUse('web')">📷 My webcam</button>
+      <button onclick="camUse('esp')">📡 ESP32-CAM</button>
+      <input type="text" class="txt" id="camUrl" placeholder="ESP32-CAM URL · e.g. http://192.168.1.50/stream">
+    </div>
+    <div class="cam-status" id="camStatus">Webcam needs http://127.0.0.1:8000 (or HTTPS) — ESP32-CAM works anywhere.</div>
+  </div>
+</div>
+
+<!-- ═══════ TOASTS ═══════ -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════
+   FloodX 2.0 v2 — rebuilt with defensive map handling
+   ════════════════════════════════════════════════════════ */
+const Q_SCALE = 10;
+const DS_ZONES = { 'Zone_1':'1st','Zone_2':'2nd','Zone_3':'3rd','Zone_4':'4th','Zone_5':'5th','Zone_6':'6th','Zone_7':'7th','Zone_8':'8th' };
+const CITY_DEFAULT = { name:'Chennai', lat:13.0827, lng:80.2707, zoom:12 };
+const CITY_STREETS = { zoom:15, center:[13.0832, 80.2705] };
+
+const ZONE_COLORS = { Z01:'#3E7CB1', Z02:'#7D3EB1', Z03:'#3EB17D', Z04:'#B15C3E', Z05:'#B1A23E', Z06:'#3EB1B0', Z07:'#6C3EB1', Z08:'#C96C3E' };
+const ZONE_NAME = { Z01:'Zone 1', Z02:'Zone 2', Z03:'Zone 3', Z04:'Zone 4', Z05:'Zone 5', Z06:'Zone 6', Z07:'Zone 7', Z08:'Zone 8' };
+
+const STREETS = {
+  '1st': { name:'1st Street', zone:'Z01', lat:13.0841, lng:80.2675, base:{rain:22, depth:6,  flow:38,  cap:150, prob:8,  time:0, cctv:'No flooding'}},
+  '2nd': { name:'2nd Street', zone:'Z02', lat:13.0846, lng:80.2685, base:{rain:22, depth:12, flow:55,  cap:150, prob:35, time:0, cctv:'Ponding visible'}},
+  '3rd': { name:'3rd Street', zone:'Z03', lat:13.0835, lng:80.2692, base:{rain:74, depth:38, flow:126, cap:150, prob:91, time:18, cctv:'Flood detected'}},
+  '4th': { name:'4th Street', zone:'Z04', lat:13.0840, lng:80.2715, base:{rain:74, depth:29, flow:112, cap:140, prob:68, time:35, cctv:'Water rising'}},
+  '5th': { name:'5th Street', zone:'Z05', lat:13.0829, lng:80.2720, base:{rain:74, depth:16, flow:74,  cap:140, prob:44, time:0, cctv:'Waterlogging'}},
+  '6th': { name:'6th Street', zone:'Z06', lat:13.0837, lng:80.2732, base:{rain:12, depth:4,  flow:20,  cap:130, prob:5,  time:0, cctv:'Clear'}},
+  '7th': { name:'7th Street', zone:'Z07', lat:13.0815, lng:80.2735, base:{rain:9,  depth:3,  flow:15,  cap:120, prob:3,  time:0, cctv:'Clear'}},
+  '8th': { name:'8th Street', zone:'Z08', lat:13.0810, lng:80.2740, base:{rain:74, depth:33, flow:118, cap:125, prob:86, time:22, cctv:'Flood detected'}}
+};
+const STREET_KEYS = Object.keys(STREETS);
+const SKEY = {}; STREET_KEYS.forEach((k,i)=>{ SKEY[k]=i; });
+const EDGES = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[0,2],[1,3],[2,4],[3,5],[4,6],[5,7]];
+
+const LIVE = {};
+STREET_KEYS.forEach(k => {
+  const b = STREETS[k].base;
+  LIVE[k] = { rain:b.rain, depth:b.depth, flow:b.flow, cap:b.cap, block:10, prob:b.prob, time:b.time, cctv:b.cctv, flood:0 };
+});
+const DRAIN = {};
+STREET_KEYS.forEach((k,i) => {
+  DRAIN[k] = { condition:i<3?'Good':'Fair', blockage:5+i*4, util:0, pipe:'RCC 900mm', clean:'Aug 2026', notes:'Free flow' };
+});
+const PIPE_COLORS = { Good:'#146C43', Fair:'#855800', Poor:'#921F1F' };
+
+let SENSORS = [];
+function buildSensors(){ SENSORS=[]; STREET_KEYS.forEach(k=>{ SENSORS.push({id:'WL-'+k+'-1', street:k, lat:STREETS[k].lat+0.00035, lng:STREETS[k].lng-0.0004, type:'Water level', ok:true}); SENSORS.push({id:'FL-'+k+'-1', street:k, lat:STREETS[k].lat-0.0003, lng:STREETS[k].lng+0.0003, type:'Flow', ok:true}); }); }
+
+function streetRisk(k){
+  const L = LIVE[k];
+  if (L.flood===1) return 'red';
+  const util = L.cap ? (L.flow/L.cap)*100 : 0;
+  if (util>=90 || L.depth>=25 || L.prob>=75) return 'red';
+  if (util>=60 || L.depth>=15 || L.prob>=55) return 'orange';
+  if (util>=40 || L.depth>=8 || L.prob>=25) return 'yellow';
+  return 'green';
+}
+
+/* ═══════ map — defensive init ═══════ */
+let map = null;
+let tileFallback = false;
+let layZones = null, layStreets = null, laySensors = null, layRoute = null;
+
+function reloadPage(){
+  if (location.protocol === 'file:'){ return; }
+  location.reload();
+}
+function hideFileBanner(){
+  const b = document.getElementById('fileBanner');
+  if (b) b.classList.remove('on');
+}
+function showFileBanner(){
+  const b = document.getElementById('fileBanner');
+  if (b) { b.classList.add('on');
+    b.innerHTML = '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="flex:1">📄 <b>Direct-open mode (file).</b> The LIVE server features (SSE feed, ESP32 sensor stream, webcam) need <b>http://127.0.0.1:8000/v2</b>. A local demo feed is running for you now.</span>' +
+      '<span style="white-space:nowrap"><button class="btn" onclick="location.href=\'http://127.0.0.1:8000/v2\'">Open on server →</button> ' +
+      '<button class="btn" onclick="hideFileBanner()">✕</button></span></div>';
+  }
+}
+if (location.protocol === 'file:'){ setTimeout(showFileBanner, 300); }
+function mapErrRetry(){
+  const el = document.getElementById('mapErr'); if (el) el.classList.remove('on');
+  if (location.protocol === 'file:'){
+    if (typeof L === 'undefined' || !L.map){ try { window.__loadLeaflet && window.__loadLeaflet(); } catch(e){} setTimeout(initMap, 600); }
+    else initMap();
+  } else {
+    location.reload();
+  }
+}
+function mapErr(msg){
+  const el = document.getElementById('mapErr');
+  if (el) { el.innerHTML = '⚠️ ' + msg + '<br><button class="btn" style="margin-top:10px" onclick="mapErrRetry()">Retry</button>'; el.classList.add('on'); }
+}
+function showMapError(){ map && map.remove(); map=null;
+  mapErr('Map engine could not start.'); }
+
+function hexRing(center, r){
+  const pts=[]; 
+  for(let i=0;i<6;i++){ const a=Math.PI/3*i+Math.PI/6;
+    pts.push([parseFloat((center.lat+r*Math.cos(a)).toFixed(5)), parseFloat((center.lng+r*Math.sin(a)*1.3).toFixed(5))]); }
+  return pts;
+}
+
+function initMap(){
+  const container = document.getElementById('map');
+  if (!container) return false;
+  container.innerHTML = '';                    // purge any stale instance
+  if (typeof L === 'undefined' || !L.map) { mapErr('Leaflet library did not load (CDN).'); return false; }
+  try {
+    const w = container.clientWidth, h = container.clientHeight;
+    if (w === 0 || h === 0) { setTimeout(initMap, 200); return false; }   // retry until sized
+  } catch(e){}
+  try {
+    map = L.map('map', { zoomControl:false, trackResize:true })
+      .setView([CITY_DEFAULT.lat, CITY_DEFAULT.lng], CITY_DEFAULT.zoom);
+    const t1 = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+    t1.on('tileerror', function(){
+      if (tileFallback) return; tileFallback = true;
+      try { map.removeLayer(t1); } catch(e){}
+      L.tileLayer('https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        { maxZoom:19, attribution:'© OpenStreetMap © CARTO', detectRetina:false }).addTo(map);
+    });
+    buildMapLayers();
+    window.addEventListener('resize', () => { if (map) map.invalidateSize(); });
+    setTimeout(() => { if (map) { map.invalidateSize(); try{ focusCityDefault(); }catch(e){ } } }, 300);
+    setTimeout(() => { if (map) map.invalidateSize(); }, 900);
+    return true;
+  } catch(e) {
+    showMapError();
+    return false;
+  }
+}
+function buildMapLayers(){
+  layZones = L.layerGroup().addTo(map);
+  layStreets = L.layerGroup().addTo(map);
+  laySensors = L.layerGroup().addTo(map);
+  layRoute = L.layerGroup().addTo(map);
+  STREET_KEYS.forEach(k=>{
+    const z = STREETS[k];
+    L.polygon(hexRing(z, 0.0010), { color: ZONE_COLORS[z.zone], weight:1, fillColor: ZONE_COLORS[z.zone], fillOpacity:0.07 }).addTo(layZones);
+    const pl = L.polyline([ [z.lat, z.lng-0.0007], [z.lat, z.lng+0.0007] ], { color:'#48BB78', weight:4, opacity:.85 }).addTo(layStreets);
+    pl._k = k;
+    pl.on('click', () => selectStreet(k));
+    awaitFocus(k, z, pl);
+    const mk = L.circleMarker([z.lat, z.lng], { radius:7, color:'#0B1320', weight:2, fillColor:'#48BB78', fillOpacity:.95 }).addTo(laySensors);
+    mk._k = k;
+    mk.on('click', () => selectStreet(k));
+  });
+}
+function awaitFocus(k, z, pl){ pl.bindTooltip(z.name, {sticky:true}); }
+
+function focusCityDefault(){ if (map) map.flyTo([CITY_DEFAULT.lat, CITY_DEFAULT.lng], CITY_DEFAULT.zoom, {duration:.5}); }
+function focusStreetNetwork(){ if (map) map.flyTo([CITY_STREETS.center[0], CITY_STREETS.center[1]], CITY_STREETS.zoom, {duration:.5}); }
+
+function updateMap(){
+  if (!map) return;
+  layStreets.eachLayer(pl => {
+    if (!pl._k) return;
+    const k = pl._k, r = streetRisk(k);
+    pl.setStyle({ color: r==='red'?'#F56565':r==='orange'?'#ED8936':r==='yellow'?'#E0A63C':'#48BB78' });
+  });
+  laySensors.eachLayer(mk => {
+    if (!mk._k) return;
+    const k = mk._k, r = streetRisk(k);
+    mk.setStyle({ fillColor: r==='red'?'#F56565':r==='orange'?'#ED8936':r==='yellow'?'#E0A63C':'#48BB78' });
+  });
+}
+
+/* ═══════ render street panel ═══════ */
+let selectedStreetKey = null;
+function selectStreet(k){
+  selectedStreetKey = k;
+  renderSidebar(k);
+}
+function renderSidebar(k){
+  if (!k || !STREETS[k]) { return; }
+  const Lk = LIVE[k], r = streetRisk(k);
+  const badgeOpts = { red:['🔴 HIGH FLOOD RISK','risk-red'], orange:['🟠 FLOODING EXPECTED','risk-orange'], yellow:['🟡 WATERLOGGING LIKELY','risk-yellow'], green:['🟢 SAFE','risk-green'] };
+  const [btext, bcls] = badgeOpts[r];
+  document.getElementById('stName').textContent = STREETS[k].name + ' — ' + STREETS[k].zone;
+  const badge = document.getElementById('stBadge');
+  badge.textContent = btext; badge.className = 'risk-badge ' + bcls;
+  const utilPct = Math.min(150, Math.round((Lk.flow/Lk.cap)*100));
+  const utilCol = utilPct>90?'var(--red)':utilPct>60?'var(--orange)':'var(--green)';
+  document.getElementById('stMetrics').innerHTML = `
+    <div class="metrics">
+      <div class="metric"><div class="m-label">Rainfall</div><div class="m-value" style="color:var(--accent)">${Math.round(Lk.rain)}<span class="m-unit">mm/hr</span></div></div>
+      <div class="metric"><div class="m-label">Water Level</div><div class="m-value" style="color:${Lk.depth>30?'var(--red)':Lk.depth>18?'var(--orange)':'var(--green)'}">${Math.round(Lk.depth*10)/10}<span class="m-unit">cm</span></div></div>
+      <div class="metric"><div class="m-label">Flow Rate</div><div class="m-value" style="color:${Lk.flow>Lk.cap*0.9?'var(--red)':'var(--accent)'}">${Math.round(Lk.flow*Q_SCALE)}<span class="m-unit">L/min</span></div></div>
+      <div class="metric"><div class="m-label">Drain Capacity</div><div class="m-value">${Math.round(Lk.cap*Q_SCALE)}<span class="m-unit">L/min</span>
+        <div class="progress-bar"><div class="progress-fill" style="width:${utilPct}%;background:${utilCol}"></div></div>
+      </div></div>
+      <div class="metric"><div class="m-label">CCTV</div><div class="m-value" style="font-size:12px">${Lk.cctv}</div></div>
+      <div class="metric"><div class="m-label">Flood Prob.</div><div class="m-value" style="color:${Lk.prob>=75?'var(--red)':Lk.prob>=55?'var(--orange)':'var(--green)'}">${Math.round(Lk.prob)}<span class="m-unit">%</span></div></div>
+      <div class="metric"><div class="m-label">Utilization</div><div class="m-value" style="font-size:14px;color:${utilCol}">${utilPct}%</div></div>
+      <div class="metric"><div class="m-label">Escalation</div><div class="m-value" style="font-size:14px">${Lk.time>0?Lk.time+' min':'—'}</div></div>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:6px">
+      <button class="btn" style="flex:1" onclick="openCam('${k}')">📹 Live CCTV</button>
+      <button class="btn" style="flex:1" onclick="renderRoutes('${k}');switchView('viewRoutes',null)">🚦 Safer Route</button>
+    </div>`;
+  updateCCTV(k);
+  renderRoutes(k);
+}
+
+/* ═══════ live camera (embedded in CCTV frame + modal) ═══════ */
+let camStream = null, camStreetKey = null, camImgActive = false;
+function openCam(k){
+  if (!k || !STREETS[k]){
+    k = (selectedStreetKey && STREETS[selectedStreetKey]) ? selectedStreetKey : STREET_KEYS[0];
+  }
+  camStreetKey = k;
+  document.getElementById('camTitle').textContent = '📹 Live Camera — ' + STREETS[k].name;
+  document.getElementById('camUrl').value = (typeof localStorage!=='undefined' && localStorage.getItem('camURL_'+k)) || '';
+  document.getElementById('camOverlay').style.display = 'flex';
+  camUse(document.getElementById('camUrl').value.trim() ? 'esp' : 'web');
+}
+function updateCCTV(k){
+  if (!k || !STREETS[k]) return;
+  const z = STREETS[k];
+  const t = document.getElementById('cctvTime');
+  const label = document.getElementById('cctvLabel');
+  const watch = document.getElementById('cctvWatch');
+  const vid = document.getElementById('cctvVideo');
+  const img = document.getElementById('cctvImg');
+  if (t) t.textContent = 'CCTV-' + z.zone.replace('Z','') + k[0];
+  const show = (camStreetKey===k) && (camStream || camImgActive);
+  if (show){
+    vid.style.display = camImgActive?'none':'block';
+    img.style.display = camImgActive?'block':'none';
+    label.style.display = 'none';
+    if (watch){ watch.textContent = camImgActive?'📡 ESP32-CAM LIVE':'📷 WEBCAM LIVE'; watch.style.color='var(--red)'; }
+  } else {
+    vid.style.display='none'; img.style.display='none';
+    label.style.display='flex'; label.textContent = LIVE[k].cctv || 'No camera feed — click to open';
+    if (watch){ watch.textContent='▶ WATCH LIVE'; watch.style.color='var(--accent)'; }
+  }
+}
+function camUse(mode){
+  camStop();
+  const url = document.getElementById('camUrl').value.trim();
+  const st = document.getElementById('camStatus');
+  const ph = document.getElementById('camPlaceholder');
+  const upd = () => updateCCTV(camStreetKey);
+  if (mode==='esp'){
+    if(!url){ ph.style.display='flex'; st.innerHTML='Enter the ESP32-CAM URL above, then click 📡 again.'; upd(); return; }
+    try{ localStorage.setItem('camURL_'+camStreetKey, url); }catch(e){}
+    camImgActive = true; ph.style.display='none';
+    document.getElementById('camImg').src = url;
+    document.getElementById('cctvImg').src = url;
+    document.getElementById('camImg').style.display='block';
+    st.innerHTML='Streaming ESP32-CAM · <b style="color:var(--green)">LIVE</b> (MJPEG).';
+    upd();
+  } else {
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
+      ph.style.display='flex';
+      st.innerHTML='Webcam needs a secure context (http://127.0.0.1:8000 or HTTPS) — use an ESP32-CAM URL instead.';
+      upd(); return;
+    }
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false })
+      .then(s => {
+        camStream = s; camImgActive = false; ph.style.display='none';
+        const v = document.getElementById('camVideo');
+        v.srcObject = s; v.style.display='block';
+        document.getElementById('camImg').style.display='none';
+        const cv = document.getElementById('cctvVideo');
+        if (cv) cv.srcObject = s;
+        st.innerHTML='Streaming webcam · <b style="color:var(--green)">LIVE</b>.';
+        upd();
+      })
+      .catch(e => { ph.style.display='flex'; st.innerHTML='Webcam '+(e.name||'error')+' — use the ESP32-CAM URL instead.'; upd(); });
+  }
+}
+function camStop(){
+  if (camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; }
+  camImgActive = false;
+  const v=document.getElementById('camVideo'), i=document.getElementById('camImg');
+  if(v){ v.srcObject=null; v.style.display='none'; }
+  if(i) i.style.display='none';
+  const cv=document.getElementById('cctvVideo'); if(cv) cv.srcObject=null;
+  const ci=document.getElementById('cctvImg'); if(ci) ci.removeAttribute('src');
+}
+function closeCam(){ document.getElementById('camOverlay').style.display='none'; }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeCam(); });
+
+/* ═══════ live feed (global) ═══════ */
+let liveConn=null, liveMode=null, liveCount=0, liveOn=false, livePrevFlood={}, testTimer=null, testIdx=0;
+function lfStatus(html,color){ const el=document.getElementById('lfStatus'); el.innerHTML=html; el.style.color=color||'var(--muted)'; }
+function toast(msg, sub){
+  const w=document.getElementById('toastWrap');
+  const d=document.createElement('div'); d.className='toast';
+  d.innerHTML='<b>'+msg+'</b><div class="tt">'+sub+'</div>';
+  w.appendChild(d);
+  setTimeout(()=>{ d.style.opacity='0'; setTimeout(()=>{ d.remove(); },300); },7000);
+}
+function numVal(v){ const n=parseFloat(v); return isNaN(n)?null:n; }
+
+function applyLiveRow(row, src){
+  if (!row || !row.street || !STREETS[row.street]) return;
+  const k = row.street;
+  if (row.rain!=null) LIVE[k].rain = Math.max(0,row.rain);
+  if (row.depth!=null) LIVE[k].depth = Math.max(0,row.depth);
+  if (row.flow!=null) LIVE[k].flow = Math.max(0,row.flow);
+  if (row.cap!=null && row.cap>0) LIVE[k].cap = row.cap;
+  if (row.blockage!=null) { LIVE[k].block=row.blockage; DRAIN[k].blockage=Math.max(0,Math.min(100,row.blockage)); }
+  const sat = row.sat!=null ? Math.max(0,row.sat) : (LIVE[k].cap?Math.round(LIVE[k].flow/LIVE[k].cap*100):50);
+  LIVE[k].prob = row.flood===1 ? Math.max(92,Math.min(99,sat)) : Math.max(2,Math.round(sat*0.55));
+  LIVE[k].cctv = row.flood===1?'Flood detected':LIVE[k].depth>18?'Water rising':LIVE[k].depth>8?'Ponding visible':'Clear';
+  LIVE[k].time = row.flood===1?15:(LIVE[k].depth>25?30:0);
+  const nowFlood = row.flood===1;
+  if (nowFlood && !livePrevFlood[k]) toast('🚨 HIGH FLOOD RISK — '+STREETS[k].name, (src?src+' ':'')+(row.ts||'live'));
+  livePrevFlood[k] = nowFlood;
+  updateAll();
+}
+function updateAll(){
+  updateMap();
+  if (selectedStreetKey) renderSidebar(selectedStreetKey);
+  updateSummary(); refreshAlerts(); renderDrainHealthMin(); renderRoutes(selectedStreetKey);
+}
+function buildRow(obj){
+  if (!obj) return null;
+  const zone = String(obj.zone||obj.zone_id||'').trim();
+  const street = DS_ZONES[zone] || (obj.street && STREETS[obj.street] ? obj.street : null);
+  if (!street || !STREETS[street]) return null;
+  return { ts:obj.timestamp||obj.ts||null, street,
+    rain:numVal(obj.rainfall_intensity_mm_hr), depth:numVal(obj.water_level_cm),
+    flow:numVal(obj.flow_rate_lps), cap:numVal(obj.drain_capacity_lps),
+    blockage:numVal(obj.blockage_pct), sat:numVal(obj.drain_saturation_pct),
+    flood:Math.abs(numVal(obj.flood_next_30min)||0)===1?1:0 };
+}
+function feedLiveRow(raw){
+  if (typeof raw==='string'){
+    const t = raw.trim();
+    if (!t || t.indexOf(':')===0 || /^(retry|event|id):/.test(t)) return;
+    if (t.charAt(0)==='{') { try{ raw=JSON.parse(t); }catch(e){ return; } }
+    else {
+      const c=t.split(',');
+      raw = { timestamp:(c[0]||'').trim(), zone:(c[1]||'').trim(),
+        rainfall_intensity_mm_hr:numVal(c[2]), water_level_cm:numVal(c[3]),
+        flow_rate_lps:numVal(c[4]), drain_capacity_lps:numVal(c[5]),
+        blockage_pct:numVal(c[6]), drain_saturation_pct:numVal(c[7]),
+        flood_next_30min:numVal(c[8])||0 };
+    }
+  }
+  const row = buildRow(raw);
+  if (!row) return;
+  liveCount++;
+  applyLiveRow(row, liveMode==='test'?'🧪 Test':(liveMode||'').toUpperCase());
+  lfStatus('✔ <b>'+(liveMode||'').toUpperCase()+'</b> · <b>'+liveCount+'</b> msgs · last: '+STREETS[row.street].name, 'var(--green)');
+}
+function setLiveUI(connected){
+  liveOn = connected;
+  const b=document.getElementById('lfConnectBtn'); b.textContent = connected?'⏻ Disconnect':'🔌 Connect';
+  const dc=document.getElementById('dsControls'); if(dc){ dc.style.pointerEvents=connected?'none':'auto'; dc.style.opacity=connected?'.4':'1'; }
+}
+/* ═══════ ESP32 / single-reading screening ═══════ */
+function loadInitialReading(){
+  if (location.protocol === 'file:') return;
+  fetch(location.origin + '/latest').then(r=>r.json()).then(j=>{
+    const row = buildRow(j);
+    if (row && STREETS[row.street]){
+      applyLiveRow(row, 'INITIAL');
+      lfStatus('✔ Initial screening reading applied (' + (j.id || 'latest') + '). Awaiting ESP32…', 'var(--green)');
+    }
+  }).catch(()=>{});
+}
+function zoneKeyOf(street){ return Object.keys(DS_ZONES).find(zk => DS_ZONES[zk] === street) || ('Zone_' + (parseInt(street)||1)); }
+function sampleReading(k){
+  k = k || (selectedStreetKey && STREETS[selectedStreetKey] ? selectedStreetKey : STREET_KEYS[0]);
+  const cap = LIVE[k].cap || STREETS[k].base.cap;
+  const storm = Math.random() < 0.4;
+  const rain = Math.round(storm ? 45 + Math.random()*70 : 5 + Math.random()*25);
+  const depth = Math.round(Math.min(55, Math.max(2, LIVE[k].depth + (Math.random()-0.5)*6 + (storm?5:-1)))*10)/10;
+  const flow = Math.min(cap*1.15, Math.max(1, Math.round(LIVE[k].flow + (Math.random()-0.5)*12 + (depth>30?10:(depth>18?5:2)))));
+  const sat = Math.min(125, Math.max(3, Math.round(flow/cap*100)));
+  const flood = (storm && depth>22 && sat>80) ? 1 : 0;
+  return { timestamp: new Date().toISOString().slice(0,19).replace('T',' '),
+    zone: zoneKeyOf(k), rainfall_intensity_mm_hr: rain,
+    water_level_cm: depth, flow_rate_lps: flow,
+    drain_capacity_lps: Math.round(cap), blockage_pct: Math.round(LIVE[k].block || STREETS[k].base.block || 10),
+    drain_saturation_pct: sat, flood_next_30min: flood };
+}
+function sendSampleESP32(){
+  const obj = sampleReading();
+  const btn = document.getElementById('espBtn'); if (btn){ btn.disabled=true; btn.textContent='⏳ sending…'; }
+  fetch(location.origin + '/ingest', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) })
+    .then(r => r.json()).then(res => {
+      const row = buildRow(obj);
+      if (row) applyLiveRow(row, '🧪 ESP32');
+      if (btn){ btn.disabled=false; btn.textContent='📤 Send 1 ESP32 reading (demo)'; }
+      lfStatus('✔ POST /ingest ok (id ' + res.id + ') · ' + obj.zone + ' updated', 'var(--green)');
+      toast('📟 ESP32 reading ingested', obj.zone + ' · ' + (res.risk_level || 'ok'));
+    })
+    .catch(() => {
+      if (btn){ btn.disabled=false; btn.textContent='📤 Send 1 ESP32 reading (demo)'; }
+      lfStatus('⚠ Could not reach API — is the server running (http)?', 'var(--red)');
+    });
+}
+function stopReplay(){ dsPlay=false; clearInterval(dsTimer);
+  const b=document.getElementById('dsPlayBtn'); if(b) b.textContent='▶ Play'; }
+function connectLive(){
+  if (liveConn){ disconnectLive(); return; }
+  stopTestStream(); stopReplay();
+  const mode = document.getElementById('lfMode').value;
+  let url = (document.getElementById('lfUrl').value||'').trim();
+  if (!url) url = location.origin + (mode==='sse'?'/stream':'/ws');
+  if (mode==='sse' && !/^https?:\/\//i.test(url) && url.charAt(0)!=='/') url='http://'+url;
+  if (mode==='ws' && !/^wss?:\/\//i.test(url)) url=(location.protocol==='https:'?'wss://':'ws://')+url;
+  liveMode=mode; liveCount=0; livePrevFlood={};
+  setLiveUI(true);
+  lfStatus('⏳ Connecting…','var(--yellow)');
+  if (mode==='sse'){
+    const es = new EventSource(url);
+    liveConn = es;
+    es.onopen = ()=>lfStatus('✔ SSE connected · '+url,'var(--green)');
+    es.onmessage = e=>feedLiveRow(e.data);
+    es.onerror = ()=>lfStatus('⚠ SSE error — is the API running? Retrying…','var(--orange)');
+  } else {
+    try {
+      const ws = new WebSocket(url);
+      liveConn = ws;
+      ws.onopen = ()=>lfStatus('✔ WebSocket connected · '+url,'var(--green)');
+      ws.onmessage = e=>feedLiveRow(e.data);
+      ws.onerror = ()=>lfStatus('⚠ WebSocket error','var(--red)');
+      ws.onclose = ()=>{ if(liveMode==='ws') lfStatus('WebSocket closed.','var(--muted)'); };
+    } catch(e){ lfStatus('⚠ Invalid WebSocket URL','var(--red)'); setLiveUI(false); }
+  }
+}
+function disconnectLive(){
+  if (liveConn){ try{ liveConn.close(); }catch(e){} liveConn=null; }
+  liveMode=null; setLiveUI(false); lfStatus('Idle — no live connection.');
+}
+function startTestStream(){
+  if (testTimer){ stopTestStream(); return; }
+  if (liveConn) disconnectLive();
+  stopReplay();
+  liveMode='test'; liveCount=0; livePrevFlood={};
+  setLiveUI(true);
+  document.getElementById('lfTestBtn').textContent='⏹ Stop Test';
+  lfStatus('🧪 Test stream running — one read every 2 s.','var(--green)');
+  testTimer = setInterval(()=>{
+    const k = STREET_KEYS[testIdx % STREET_KEYS.length]; testIdx++;
+    const Lk = LIVE[k];
+    const storm = Math.random()<0.35;
+    const rain = storm?Math.round(40+Math.random()*110):Math.round(5+Math.random()*30);
+    const depth = Math.min(60, Math.max(0, Lk.depth + (Math.random()-0.5)*3 + (storm?4:-1)));
+    const cap = Lk.cap || 130;
+    const flow = Math.min(cap*1.2, Math.max(0, Lk.flow + (Math.random()-0.5)*8 + (depth>30?12:depth>18?6:2)));
+    const sat = Math.min(125, Math.max(3, Math.round(flow/cap*100)));
+    const flood = (storm && depth>22 && sat>80)?1:0;
+    feedLiveRow({ timestamp:new Date().toISOString().slice(0,19).replace('T',' '),
+      zone:'Zone_'+(SKEY[k]+1), rainfall_intensity_mm_hr:rain, water_level_cm:Math.round(depth*10)/10,
+      flow_rate_lps:Math.round(flow), drain_capacity_lps:cap, blockage_pct:DRAIN[k].blockage,
+      drain_saturation_pct:sat, flood_next_30min:flood });
+  },2000);
+}
+function stopTestStream(){
+  clearInterval(testTimer); testTimer=null;
+  const b=document.getElementById('lfTestBtn'); if(b) b.textContent='🧪 Test Stream';
+  if (liveMode==='test'){ liveMode=null; setLiveUI(false); lfStatus('Test stream stopped.'); }
+}
+
+/* ═══════ dataset feed ═══════ */
+let DATASET = null, dsStep = 0, dsPlay = false, dsTimer = null;
+function collectHeaders(fi){ return [fi['timestamp'],fi['zone'],fi['rainfall_intensity_mm_hr'],fi['water_level_cm'],fi['flow_rate_lps'],fi['drain_capacity_lps'],fi['blockage_pct'],fi['drain_saturation_pct'],fi['flood_next_30min']]; }
+function loadDatasetFile(file){
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try {
+      const rows = parseCsv(rd.result);
+      if (!rows.length) throw new Error('no rows');
+      DATASET = rows;
+      const Z = document.getElementById('navDs');
+      Z.style.display='inline'; Z.textContent='📂 '+file.name+' · '+rows.length+' rows';
+      dsStep = 0;
+      document.getElementById('dsRange').max = rows.length-1;
+      document.getElementById('dsControls').style.display='block';
+      document.getElementById('navRegionTxt').textContent = 'Chennai dataset · ' + file.name;
+      stopAllLive();
+      focusStreetNetwork();
+      applyDatasetStep();
+      toast('📂 Dataset loaded', file.name+' · '+rows.length+' rows · starting replay.');
+    } catch(e){ toast('❌ Bad CSV', e.message); }
+  };
+  rd.readAsText(file);
+}
+function stopAllLive(){ stopTestStream(); disconnectLive(); }
+function parseCsv(text){
+  const raw = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
+  if (!raw.length) return [];
+  const header = raw[0].toLowerCase();
+  const start = header.indexOf('timestamp')===0 ? 1 : 0;
+  const rows=[];
+  for(let i=start;i<raw.length;i++){
+    const c = raw[i].split(',');
+    if (c.length<2) continue;
+    const zone = (c[1]||'').trim();
+    const street = DS_ZONES[zone];
+    if (!street || !STREETS[street]) continue;
+    const p = raw.length>80 ? {ts:c[0], tsI:0, r:5, d:7, f:8, cp:9, bl:10, st:18, fl:19}
+                             : {ts:c[0], tsI:0, r:2, d:3, f:4, cp:5, bl:6, st:7, fl:8};
+    rows.push({ ts:(c[p.ts]||'').trim(), street, rain:numVal(c[p.r]), depth:numVal(c[p.d]),
+      flow:numVal(c[p.f]), cap:numVal(c[p.cp]), blockage:numVal(c[p.bl]),
+      sat:numVal(c[p.st]), flood:Math.abs(numVal(c[p.fl])||0)===1?1:0 });
+  }
+  return rows;
+}
+function applyDatasetStep(){
+  if (!DATASET || liveOn) return;
+  const row = DATASET[dsStep];
+  if (!row) return;
+  applyLiveRow(row, 'Dataset');
+  document.getElementById('dsTs').textContent = row.ts;
+  document.getElementById('dsPos').textContent = (dsStep+1)+' / '+DATASET.length;
+  document.getElementById('dsRange').value = dsStep;
+}
+function stepDataset(d){ if (!DATASET||liveOn) return; dsStep=Math.max(0,Math.min(DATASET.length-1,dsStep+d)); applyDatasetStep(); }
+function seekDataset(v){ if (!DATASET||liveOn) return; dsStep=parseInt(v,10)||0; applyDatasetStep(); }
+function togglePlay(){
+  if (!DATASET||liveOn) return;
+  dsPlay = !dsPlay;
+  document.getElementById('dsPlayBtn').textContent = dsPlay?'⏸ Pause':'▶ Play';
+  if (dsPlay){ clearInterval(dsTimer); dsTimer=setInterval(()=>{ if(dsStep>=DATASET.length-1) togglePlay(); else stepDataset(1); },800); }
+  else { clearInterval(dsTimer); dsTimer=null; }
+}
+document.getElementById('dsFile').addEventListener('change', e=>{ const f=e.target.files && e.target.files[0]; if(f) loadDatasetFile(f); });
+window.addEventListener('dragover', e=>e.preventDefault());
+window.addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files && e.dataTransfer.files[0]; if(f && /\.csv$/i.test(f.name)) loadDatasetFile(f); });
+
+/* ═══════ sim (only when nothing live) ═══════ */
+function tickSim(){
+  if (DATASET || liveOn) return;
+  STREET_KEYS.forEach(k=>{
+    const b = STREETS[k].base;
+    LIVE[k].rain  = Math.max(0, Math.round(b.rain  + (Math.random()-0.5)*4));
+    LIVE[k].depth = Math.max(0, Math.round(b.depth + (Math.random()-0.5)*2));
+    LIVE[k].flow  = Math.max(0, Math.round(b.flow  + (Math.random()-0.5)*6));
+    LIVE[k].prob  = Math.min(99, Math.max(1, Math.round(b.prob + (Math.random()-0.5)*4)));
+  });
+  updateAll();
+}
+
+/* ═══════ zones list + summary ═══════ */
+function renderZoneList(){
+  const el = document.getElementById('zoneList');
+  el.innerHTML='';
+  STREET_KEYS.forEach(k=>{
+    const z=STREETS[k], r=streetRisk(k);
+    const col = r==='red'?'var(--red)':r==='orange'?'var(--orange)':r==='yellow'?'var(--yellow)':'var(--green)';
+    el.innerHTML += `<div style="cursor:pointer" onclick="selectStreet('${k}')"><b>${z.name}</b><span class="ztag" style="color:${col}">${z.zone}</span></div>`;
+  });
+}
+function updateSummary(){
+  let rr=0, yy=0, gg=0;
+  STREET_KEYS.forEach(k=>{ const s=streetRisk(k); if(s==='red')rr++; else if(s==='yellow'||s==='orange')yy++; else gg++; });
+  document.getElementById('sumRed').textContent=rr;
+  document.getElementById('sumYel').textContent=yy;
+  document.getElementById('sumGreen').textContent=gg;
+  document.getElementById('sumSens').textContent=SENSORS.length;
+  document.getElementById('tabStreetRisk').textContent=(rr+yy)+' RISK';
+  document.getElementById('navSensTxt').textContent='Sensors '+SENSORS.length+'/'+SENSORS.length;
+}
+
+/* ═══════ alerts ═══════ */
+function alertRows(){
+  const arr=[];
+  STREET_KEYS.forEach(k=>{
+    const r=streetRisk(k), L=LIVE[k];
+    if (r==='red') arr.push({k, t:'🔴 CRITICAL — '+STREETS[k].name+' flooding in next 30 min', c:'red'});
+    else if (r==='orange') arr.push({k, t:'🟠 '+STREETS[k].name+' flooding expected', c:'red'});
+    else arr.push({k, t:'🟢 '+STREETS[k].name+' SAFE — '+Math.round(L.prob)+'% risk', c:'low'});
+  });
+  return arr;
+}
+function refreshAlerts(){
+  const arr = alertRows().filter(a=>a.c!=='low').concat(alertRows().filter(a=>a.c==='low'));
+  const mini = document.getElementById('alertsList');
+  const full = document.getElementById('alertsFull');
+  if (!mini || !full) return;
+  const mk = a => `<div class="alert-item ${a.c}"><div class="a-title">${a.t}</div><div class="a-time">${new Date().toLocaleTimeString('en-IN',{hour12:false})} · ${STREETS[a.k].zone}</div></div>`;
+  mini.innerHTML = arr.slice(0,6).map(mk).join('');
+  full.innerHTML = arr.map(mk).join('');
+}
+
+/* ═══════ drains ═══════ */
+function drainStatus(k){
+  const L=LIVE[k], util=L.cap?(L.flow/L.cap)*100:0, blk=DRAIN[k].blockage;
+  if (util>=90||blk>=80) return {txt:'CRITICAL',cls:'bad'};
+  if (util>=60||blk>=50) return {txt:'FAIR',cls:'warn'};
+  return {txt:'GOOD',cls:'ok'};
+}
+function renderDrainHealthMin(){
+  const el=document.getElementById('drainMini'); if (!el) return;
+  el.innerHTML = STREET_KEYS.map(k=>{
+    const s=drainStatus(k), L=LIVE[k], util=L.cap?Math.round((L.flow/L.cap)*100):0;
+    return `<div><b>${STREETS[k].name}</b><span class="ztag ${s.cls}" style="color:${s.cls==='bad'?'var(--red)':s.cls==='warn'?'var(--yellow)':'var(--green)'}">${s.txt} · ${util}%</span></div>`;
+  }).join('');
+}
+function renderDrainHealth(){
+  const el=document.getElementById('drainGrid'); if (!el) return;
+  el.innerHTML = STREET_KEYS.map(k=>{
+    const s=drainStatus(k), d=DRAIN[k], L=LIVE[k], util=L.cap?Math.round((L.flow/L.cap)*100):0;
+    return `<div class="dcard"><h4>${STREETS[k].name} <span style="float:right"><span class="chip ${s.cls}" style="color:${s.cls==='bad'?'var(--red)':s.cls==='warn'?'var(--yellow)':'var(--green)'}">${s.txt}</span></span></h4>
+      <div class="dm-row"><span>Utilization</span><b style="color:${util>=90?'var(--red)':util>=60?'var(--orange)':'var(--green)'}">${util}%</b></div>
+      <div class="dm-row"><span>Blockage / choke</span><b>${d.blockage}%</b></div>
+      <div class="dm-row"><span>Pipe</span><b>${d.pipe}</b></div>
+      <div class="dm-row"><span>Last cleaned</span><b>${d.clean}</b></div>
+      <div class="dm-row"><span>Notes</span><b>${d.notes}</b></div></div>`;
+  }).join('');
+}
+
+/* ═══════ sensors health ═══════ */
+function renderSensorHealth(){
+  const el=document.getElementById('sensorGrid'); if (!el) return;
+  el.innerHTML = SENSORS.map(s=>{
+    const L=LIVE[s.street], ok= true;
+    const st = !ok?'<span class="bad">OFFLINE</span>':'<span class="ok">ONLINE</span>';
+    const val = s.type==='Water level' ? Math.round(L.depth)+' cm' : Math.round(L.flow*Q_SCALE)+' L/min';
+    return `<div class="scard"><h4>${s.id} ${st}</h4>
+      <div class="dm-row"><span>Type</span><b>${s.type}</b></div>
+      <div class="dm-row"><span>Street</span><b>${STREETS[s.street].name}</b></div>
+      <div class="dm-row"><span>Reading</span><b style="color:var(--accent)">${val}</b></div></div>`;
+  }).join('');
+}
+
+/* ═══════ routes (flood-weighted Dijkstra) ═══════ */
+function routeCost(i, avoid){
+  const L=LIVE[STREET_KEYS[i]];
+  if (avoid && (L.flood===1)) return 12;
+  const util = L.cap?(L.flow/L.cap)*100:0;
+  if (util>=90) return 8;
+  if (util>=60) return 3;
+  return 1;
+}
+function findPath(from, to, avoid){
+  const n=STREET_KEYS.length, INF=1e9;
+  const dist=Array(n).fill(INF), prev=Array(n).fill(-1), seen=Array(n).fill(false);
+  dist[from]=0;
+  for(let it=0;it<n;it++){
+    let u=-1, best=INF;
+    for(let i=0;i<n;i++) if(!seen[i] && dist[i]<best){ best=dist[i]; u=i; }
+    if(u===-1||u===to) break;
+    seen[u]=true;
+    EDGES.forEach(e=>{
+      let v = e[0]===u?e[1]:(e[1]===u?e[0]:-1);
+      if(v===-1) return;
+      const alt = dist[u]+routeCost(v,avoid);
+      if(alt<dist[v]){ dist[v]=alt; prev[v]=u; }
+    });
+  }
+  if(dist[to]===INF) return null;
+  const path=[]; let c=to;
+  while(c!==-1){ path.unshift(c); c=prev[c]; }
+  return path;
+}
+function routeDistance(path){
+  let km=0;
+  for(let i=0;i<path.length-1;i++){
+    const a=STREETS[STREET_KEYS[path[i]]], b=STREETS[STREET_KEYS[path[i+1]]];
+    const d=Math.sqrt(Math.pow((a.lat-b.lat)*111,2)+Math.pow((a.lng-b.lng)*111*Math.cos(a.lat*Math.PI/180),2));
+    km+=d;
+  }
+  return km;
+}
+function safeTarget(fromIdx){
+  const avoid = true;
+  let best=-1, bestCost=1e9;
+  STREET_KEYS.forEach((k,i)=>{
+    if (i===fromIdx) return;
+    const c = routeCost(i, avoid);
+    if (c <= bestCost){ bestCost=c; best=i; }
+  });
+  return best;
+}
+function renderRoutes(k){
+  const from = k && SKEY[k]!=null ? SKEY[k] : (SKEY['3rd']!=null?SKEY['3rd']:0);
+  const to = safeTarget(from);
+  const avoid = true;
+  const miniEl = document.getElementById('routesListMini');
+  const fullEl = document.getElementById('routesFull');
+  const ctx = document.getElementById('routeContextMini');
+  if (miniEl) miniEl.innerHTML = '<div class="hint">Planning…</div>';
+  if (!STREET_KEYS[from] || !STREET_KEYS[to]) return;
+  const p1 = findPath(from, to, avoid);
+  let alt = null;
+  if (p1){
+    for(let i=0;i<p1.length-1;i++){
+      const a=p1[i], b=p1[i+1];
+      const blocked = EDGES.find(e=> (e[0]===a&&e[1]===b)||(e[0]===b&&e[1]===a));
+      if (!blocked) continue;
+      const tmp = EDGES.indexOf(blocked);
+      const saved = EDGES[tmp];
+      EDGES[tmp] = [-1,-1];
+      const p = findPath(from, to, avoid);
+      if (p && p.join(',')!==p1.join(',')){
+        if(!alt || routeDistance(p)<routeDistance(alt)) alt=p;
+      }
+      EDGES[tmp] = saved;
+    }
+  }
+  drawRoute(p1);
+  const steps = p => p.map((i,ix)=>`<b>${ix+1}.</b> ${STREETS[STREET_KEYS[i]].name}`).join(' → ');
+  if (ctx) ctx.textContent = 'Recommended safer route from ' + STREETS[STREET_KEYS[from]].name + ' to safe point (' + STREETS[STREET_KEYS[to]].name + '). Avoids CRITICAL streets.';
+  if (miniEl){
+    if (!p1) miniEl.innerHTML = '<div class="route-card"><span class="dang" style="color:var(--red)">⚠ No safe route.</span></div>';
+    else miniEl.innerHTML =
+      '<div class="route-card reco"><b>✅ Safer route</b> · '+routeDistance(p1).toFixed(2)+' km<div class="route-steps">'+steps(p1)+'</div></div>' +
+      (alt?'<div class="route-card"><b>🔁 Alternative</b> · '+routeDistance(alt).toFixed(2)+' km<div class="route-steps">'+steps(alt)+'</div></div>':'');
+  }
+  if (fullEl){
+    if (!p1) fullEl.innerHTML = '<div class="route-card"><span style="color:var(--red)">⚠ No safe route — every path is flooded.</span></div>';
+    else fullEl.innerHTML =
+      '<div class="route-card reco"><b>✅ RECOMMENDED</b><div class="route-steps">'+steps(p1)+'</div><div class="route-meta">≈ '+routeDistance(p1).toFixed(2)+' km · avoids flooded streets</div></div>' +
+      (alt?'<div class="route-card"><b>🔁 ALTERNATIVE</b><div class="route-steps">'+steps(alt)+'</div><div class="route-meta">≈ '+routeDistance(alt).toFixed(2)+' km</div></div>':'<div class="route-card"><span style="color:var(--yellow)">No clear alternative.</span></div>');
+  }
+}
+function drawRoute(path){
+  if (!map) return;
+  layRoute.clearLayers();
+  if (!path) return;
+  for(let i=0;i<path.length-1;i++){
+    L.polyline([STREETS[STREET_KEYS[path[i]]], STREETS[STREET_KEYS[path[i+1]]]],
+      { color:'#4FD1C5', weight:5, opacity:.9 }).addTo(layRoute);
+  }
+}
+
+/* ═══════ tab switch ═══════ */
+function switchView(viewId, el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(viewId).classList.add('active');
+  if (viewId==='viewSensorHealth') renderSensorHealth();
+  if (viewId==='viewDrainHealth') renderDrainHealth();
+  if (viewId==='viewAlerts') refreshAlerts();
+  if (viewId==='viewRoutes') renderRoutes(selectedStreetKey || '3rd');
+  if (viewId==='viewMap' && map) setTimeout(()=>map.invalidateSize(), 120);
+}
+
+/* ═══════ boot ═══════ */
+function boot(){
+  buildSensors();
+  renderZoneList();
+  updateSummary();
+  renderDrainHealthMin();
+  renderDrainHealth();
+  renderSensorHealth();
+  refreshAlerts();
+  updateMap();
+  document.getElementById('navRegionTxt').textContent = CITY_DEFAULT.name;
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN',{hour12:false}) + ' IST';
+  const okMap = initMap();
+  setTimeout(()=>{ if (okMap && map) { try{ map.invalidateSize(); }catch(e){} } }, 500);
+  setInterval(tickClock, 1000);
+  lfStatus('📟 ESP32 MODE — screening on one reading; real-time updates via POST /ingest.', 'var(--accent)');
+  if (/^https?:/.test(location.protocol)){
+    const lf = document.getElementById('lfUrl');
+    if (lf) lf.value = location.origin + '/stream';
+    setTimeout(()=>{ try{ loadInitialReading(); }catch(e){ } }, 300);
+    setTimeout(()=>{ try{ connectLive(); }catch(e){ } }, 700);
+  } else {
+    console.log('FloodX v2 — direct file mode: starting local demo feed.');
+    setTimeout(()=>{ try{ startTestStream(); }catch(e){ } }, 900);
+  }
+}
+function tickClock(){
+  const c=document.getElementById('clock');
+  if (c) c.textContent = new Date().toLocaleTimeString('en-IN',{hour12:false}) + ' IST';
+}
+console.log('FloodX 2.0 v2 booting…');
+boot();
+</script>
+</body>
+</html>

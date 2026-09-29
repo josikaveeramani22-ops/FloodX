@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloodX 2.0 — Absolute Minimum Budget</title>
+<style>
+:root{--bg:#0B1320;--bg2:#111C2E;--card:#152238;--card2:#1B2A42;--border:#24364F;--text:#E8EEF7;--muted:#8CA3BF;--accent:#4FD1C5;--green:#48BB78;--yellow:#E0A63C;--red:#F56565}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Calibri,sans-serif;background:var(--bg);color:var(--text);padding:34px;max-width:860px;margin:0 auto}
+h1{font-size:24px;margin-bottom:4px}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:7px 8px;border-bottom:1px dashed var(--border)}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+tr.total td{font-weight:800;border-top:1px solid var(--accent);border-bottom:none;color:var(--accent)}
+.big{font-size:26px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+.note{font-size:12px;color:var(--muted);line-height:1.7}
+.pitch{background:linear-gradient(90deg,rgba(79,209,197,.12),transparent);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;font-size:14px}
+.pitch b{color:var(--accent)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip{background:var(--card2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11px;color:var(--muted)}
+.foot{margin-top:8px;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>🌊 FloodX <span>2.0</span> — Absolute Minimum Budget</h1>
+<div class="sub">Ultra low-cost 8-zone live deployment · software stack already built (FastAPI + dashboards) = ₹0</div>
+
+<div class="card">
+  <h2>Per street (1 zone)</h2>
+  <table>
+    <tr><th>Item</th><th class="r">Qty</th><th class="r">₹</th></tr>
+    <tr><td>ESP32 dev board (WiFi)</td><td class="r">1</td><td class="r">600</td></tr>
+    <tr><td>Ultrasonic water-level sensor (HC-SR04)</td><td class="r">1</td><td class="r">350</td></tr>
+    <tr><td>Flow meter (YF-S201 turbine)</td><td class="r">1</td><td class="r">900</td></tr>
+    <tr><td>Wires / enclosure / mounts</td><td class="r">—</td><td class="r">1,700</td></tr>
+    <tr><td>SD-card data logging (offline buffer)</td><td class="r">1</td><td class="r">150</td></tr>
+    <tr><td>Installation (student/self)</td><td class="r">1</td><td class="r">0</td></tr>
+    <tr class="total"><td>Subtotal / street</td><td class="r">—</td><td class="r">≈ 3,700</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Centralised (shared, once)</h2>
+  <table>
+    <tr><th>Item</th><th class="r">₹</th></tr>
+    <tr><td>ESP32 as central hub — collects all 8 zones, logs to SD, forwards to PC (runs the existing API + dashboards)</td><td class="r">1,200</td></tr>
+    <tr><td>Rain gauge (1 for all 8 streets, DIY tipping bucket)</td><td class="r">2,000</td></tr>
+    <tr><td>Calibration kit (bucket, tape, multimeter)</td><td class="r">2,500</td></tr>
+    <tr class="total"><td>Subtotal (shared)</td><td class="r">≈ 5,700</td></tr>
+  </table>
+</div>
+
+<div class="pitch">
+  <b>8 streets × ₹3,700 = ₹29,600</b> &nbsp;+&nbsp; shared <b>₹5,700</b> &nbsp;=&nbsp;
+  <span class="big">≈ ₹35,300 total</span>
+  <div class="note" style="margin-top:6px">Under <b>₹36,000</b> for a complete live 8-zone urban flood nowcasting system — ESP32 sensor nodes + an ESP32 central hub feeding readings into the existing FloodX API, with live admin & citizen dashboards updating in real time.</div>
+</div>
+
+<div class="chips">
+  <span class="chip">✔ No software cost — already built</span>
+  <span class="chip">✔ No 4G/SIM needed — WiFi or SD-card buffer</span>
+  <span class="chip">✔ Real-water testing, not just simulation</span>
+  <span class="chip">✔ Scales to city-wide later</span>
+</div>
+
+<div class="foot">FloodX 2.0 · prototype budget sheet · generated for jury presentation</div>
+
+</body>
+</html>
